@@ -2,17 +2,16 @@
   "name": "scam-coin",
   "version": "1.0.0",
   "description": "University project implementing own crypto currency",
-  "main": "src/index.js",
+  "exports": "./src/index.js",
   "scripts": {
     "build": "tsc",
-    "start:prod": "node ./dist/index.js",
-    "start:dev": "ts-node-dev --respawn --transpile-only ./src/index.ts",
-    "start:client": "ts-node-dev --respawn --transpile-only ./src/client.ts",
+    "start:prod": "node --env-file .env ./dist/index.js",
+    "start:dev": "tsx --watch --env-file .env ./src/index.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prettier": "prettier --ignore-path .gitignore --write \"./src/**/*.+(js|ts|json)\"",
     "prettier:fix": "prettier --write src",
-    "test": "node --test tests"
+    "test": "node --env-file .env --import tsx --no-warnings --test ./tests/**"
   },
   "keywords": [],
   "author": "",
@@ -24,11 +23,12 @@
     "@typescript-eslint/parser": "^8.8.1",
     "eslint": "^9.12.0",
     "globals": "^15.11.0",
-    "nodemon": "^3.1.7",
     "prettier": "^3.3.3",
-    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.8.1"
   },
-  "dependencies": {}
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
 }

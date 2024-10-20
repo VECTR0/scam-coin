@@ -19,7 +19,7 @@ class Server {
       socket.on('connect', () => {
         console.log(`a client connected ${this.neigbours}`);
       });
-      this.connectSocket(socket);
+      // this.connectSocket(socket);
 
       socket.on('data', (clientData) => {
         console.log(`client sent ${clientData}`);
@@ -31,7 +31,7 @@ class Server {
     });
 
     tcpServer.listen(port, 'localhost');
-    this.connectPeers();
+    // this.connectPeers();
   }
 
   private connectSocket(socket: Socket) {
