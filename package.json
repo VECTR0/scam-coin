@@ -7,6 +7,8 @@
     "build": "tsc",
     "start:prod": "node --env-file .env ./dist/index.js",
     "start:dev": "tsx --watch --env-file .env ./src/index.ts",
+    "start:dev:root": "tsx --watch --env-file .env ./src/index.ts --port 13370",
+    "start:dev:a": "tsx --watch --env-file .env ./src/index.ts --connectTo localhost:13370",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prettier": "prettier --ignore-path .gitignore --write \"./src/**/*.+(js|ts|json)\"",
