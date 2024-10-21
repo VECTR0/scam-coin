@@ -38,6 +38,7 @@ class P2PServer {
   address: string;
   tcpServer: Server | null;
   name: string;
+  showDebug:boolean = false;
 
   constructor() {
     this.neighbors = [];
@@ -49,12 +50,18 @@ class P2PServer {
       Math.random().toString(36).substring(2, 15);
   }
 
+  log (...args: any[]) {
+    if (this.showDebug) {
+      console.log(...args);
+    }
+  }
+
   addNewNeighbor(neighbor: Neighbor, incoming: boolean = false) {
     this.neighbors.push(neighbor);
     const socket = neighbor.socket;
 
     socket.on('end', () => {
-      console.log('Client disconnected');
+      this.log('Client disconnected');
       this.neighbors = this.neighbors.filter(
         (n) => n.address !== neighbor.address,
       );
@@ -116,7 +123,7 @@ class P2PServer {
 
   listen(port: number = 0) {
     this.tcpServer = createServer((socket) => {
-      console.log(
+      this.log(
         `===`,
         `Node connected from ${socket.remoteAddress}:${socket.remotePort}`,
       );
@@ -137,14 +144,14 @@ class P2PServer {
       const { port, address } = this.tcpServer!.address() as AddressInfo;
       this.port = port;
       this.address = address;
-      console.log(`Node listening on portdd ${this.address}:${this.port}`);
+      this.log(`Node listening on portdd ${this.address}:${this.port}`);
     });
 
     setInterval(
       () => {
-        console.log('===', 'Current neighbors:');
+        this.log('===', 'Current neighbors:');
         this.neighbors.forEach((n) => {
-          console.log(
+          this.log(
             '===',
             `- ${n.name} ${n.listeningAddress} (${n.address})`,
           );
@@ -166,7 +173,7 @@ class P2PServer {
 
         for (const neighbor of this.neighbors) {
           if (Date.now() - neighbor.lastHeartbeat > 10000) {
-            console.log(`Neighbor ${neighbor.address} is dead`);
+            this.log(`Neighbor ${neighbor.address} is dead`);
             neighbor.socket.destroy();
             this.neighbors = this.neighbors.filter(
               (n) => n.address !== neighbor.address,
@@ -197,7 +204,7 @@ class P2PServer {
   connectTo(address: string) {
     const [ip, port] = address.split(':');
     const socket = connect(Number(port), ip, () => {
-      console.log(`Connected to node ${address}`);
+      this.log(`Connected to node ${address}`);
       const neighbor = {
         address: address,
         listeningAddress: address,
@@ -217,7 +224,7 @@ class P2PServer {
     b.writeUInt32LE(data ? data.length : 0, 2);
     if (data) b = Buffer.concat([b, Buffer.from(data, 'ascii')]);
     socket.write(b);
-    console.log(
+    this.log(
       '>>>',
       PacketType[type],
       socket.remoteAddress + ':' + socket.remotePort,
@@ -226,7 +233,7 @@ class P2PServer {
   }
 
   private handleInfoPacket(packet: Packet, neighbor: Neighbor) {
-    console.log(
+    this.log(
       '<<<',
       PacketType[packet.type],
       PacketFlag[packet.flag],
@@ -281,7 +288,7 @@ class P2PServer {
             if (this.neighbors.length >= 5) return;
             const { address } = n;
             const [ip, port] = address.split(':');
-            console.log(`New neighbor ${ip}:${port}`);
+            this.log(`New neighbor ${ip}:${port}`);
             try {
               const socket = connect(Number(port), ip, () => {
                 const neighbor: Neighbor = {
@@ -310,7 +317,7 @@ class P2PServer {
         neighbor.lastHeartbeat = Date.now();
         break;
       default:
-        console.log(`!!!`, `Unknown packet type: ${packet.type}`);
+        this.log(`!!!`, `Unknown packet type: ${packet.type}`);
     }
   }
 

@@ -5,6 +5,7 @@ import {
   generateKeyPairSync,
 } from 'crypto';
 import { env } from './config';
+import bs58 from 'bs58';
 
 const encryptionIV = createHash('sha512')
   .update(env.SECRET_IV)
@@ -57,6 +58,22 @@ class Crypto {
   }
   private static hashAESKey(password: string): string {
     return createHash('sha512').update(password).digest('hex').substring(0, 32);
+  }
+
+  static getAddressesFromPublicKey(publicKey: string): string { //SHA256 then add 0x13 0x37 identifier then checksum (SHA256) then base58
+    const base64 = publicKey
+      .replace('-----BEGIN PUBLIC KEY-----', '')
+      .replace('-----END PUBLIC KEY-----', '')
+      .replace(/\n/g, ''); // Remove newlines if any
+
+    const publicKeyBytes =  Buffer.from(base64, 'base64');
+    const hash = createHash('sha256').update(publicKeyBytes).digest();
+    let prefix = Buffer.from([0x42]);
+    let extended = Buffer.concat([prefix, Buffer.from(hash)]);
+    const checksum = createHash('sha256').update(extended).digest().subarray(0, 4);
+    const buffer = Buffer.concat([extended, checksum]);
+    const address = bs58.encode(buffer);
+    return address;
   }
 }
 

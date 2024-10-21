@@ -21,6 +21,7 @@ class Wallet {
   private password?: string;
   private identities: Identity[] = [];
   private saveCounter: number = 0;
+  private filename : string | undefined = undefined;
 
   constructor() {}
 
@@ -51,6 +52,7 @@ class Wallet {
       this.identities = identities || [];
       this.uuid = uuid;
       this.saveCounter = saveCounter;
+      this.filename = filename;
     } catch {
       throw new Error('Failed to load wallet.');
     }
@@ -81,21 +83,22 @@ class Wallet {
     this.identities = [];
   }
 
-  createIdentity(filename: string, address: string) {
-    if (!this.password) {
+  createIdentity() {
+    if (!this.password || !this.filename) {
       throw new Error(
         'No wallet is loaded. Please create or load a wallet first.',
       );
     }
 
     const keyPair = Crypto.keyPair();
+    let address = Crypto.getAddressesFromPublicKey(keyPair.publicKey);
     const identity: Identity = {
       address,
       keyPair,
     };
 
     this.identities.push(identity);
-    this.saveToFile(filename, this.password);
+    this.saveToFile(this.filename, this.password);
   }
 
   getPath(filename: string): string {
