@@ -30,9 +30,6 @@ if (programArgs.includes('--connectTo')) {
     peerServer.connectTo(connectToAddres);
 }
 
-// peerServer.connectTo(connectToAddres);
-
-
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -60,7 +57,7 @@ rl.on('line', (input) => {
             try {
                 wallet.loadFromFile(filename, password);
                 console.log('loaded');
-            } catch (e:any) {
+            } catch (e: any) {
                 console.error(e.message);
             }
             break;
@@ -80,16 +77,16 @@ rl.on('line', (input) => {
             break;
         }
         case 'create': {
-            try{
-            wallet.createIdentity();
-            }catch(e: any){
+            try {
+                wallet.createIdentity();
+            } catch (e: any) {
                 console.error(e.message);
             }
             console.log('Identity created');
             break;
         }
-        case 'list': // print all identities but censor private keys
-            console.log(wallet.getIdentities().map((i) => ({address: i.address, publicKey: i.keyPair.publicKey})));
+        case 'list':
+            console.log(wallet.getIdentities().map((i) => ({ address: i.address, publicKey: i.keyPair.publicKey })));
             console.warn('Private keys are not shown');
             break;
         case 'peers':

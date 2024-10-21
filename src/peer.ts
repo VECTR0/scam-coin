@@ -38,7 +38,7 @@ class P2PServer {
   address: string;
   tcpServer: Server | null;
   name: string;
-  showDebug:boolean = false;
+  showDebug: boolean = false;
 
   constructor() {
     this.neighbors = [];
@@ -50,7 +50,7 @@ class P2PServer {
       Math.random().toString(36).substring(2, 15);
   }
 
-  log (...args: any[]) {
+  log(...args: any[]) {
     if (this.showDebug) {
       console.log(...args);
     }

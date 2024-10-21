@@ -60,13 +60,13 @@ class Crypto {
     return createHash('sha512').update(password).digest('hex').substring(0, 32);
   }
 
-  static getAddressesFromPublicKey(publicKey: string): string { //SHA256 then add 0x13 0x37 identifier then checksum (SHA256) then base58
+  static getAddressesFromPublicKey(publicKey: string): string {
     const base64 = publicKey
       .replace('-----BEGIN PUBLIC KEY-----', '')
       .replace('-----END PUBLIC KEY-----', '')
-      .replace(/\n/g, ''); // Remove newlines if any
+      .replace(/\n/g, '');
 
-    const publicKeyBytes =  Buffer.from(base64, 'base64');
+    const publicKeyBytes = Buffer.from(base64, 'base64');
     const hash = createHash('sha256').update(publicKeyBytes).digest();
     let prefix = Buffer.from([0x42]);
     let extended = Buffer.concat([prefix, Buffer.from(hash)]);

@@ -21,9 +21,9 @@ class Wallet {
   private password?: string;
   private identities: Identity[] = [];
   private saveCounter: number = 0;
-  private filename : string | undefined = undefined;
+  private filename: string | undefined = undefined;
 
-  constructor() {}
+  constructor() { }
 
   public static getInstance(): Wallet {
     if (!this.instance) {
