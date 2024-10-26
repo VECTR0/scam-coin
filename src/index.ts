@@ -48,17 +48,23 @@ rl.on('line', (input) => {
             console.log('Console cleared');
             break;
         case 'dir':
-            let files = fs.readdirSync('./wallets');
-            files = files.filter((file) => file.endsWith('.dat'));
-            console.log(files);
-            break;
+            {
+                let files = fs.readdirSync('./wallets');
+                files = files.filter((file) => file.endsWith('.dat'));
+                console.log(files);
+                break;
+            }
         case 'load': {
             const [filename, password] = args;
             try {
                 wallet.loadFromFile(filename, password);
                 console.log('loaded');
-            } catch (e: any) {
-                console.error(e.message);
+            } catch (e) {
+                if (e instanceof Error) {
+                    console.error(e.message);
+                } else {
+                    console.error('loading failure');
+                }
             }
             break;
         }
@@ -79,8 +85,9 @@ rl.on('line', (input) => {
         case 'create': {
             try {
                 wallet.createIdentity();
-            } catch (e: any) {
-                console.error(e.message);
+            } catch (e) {
+                if (e instanceof Error)
+                    console.error(e.message);
             }
             console.log('Identity created');
             break;

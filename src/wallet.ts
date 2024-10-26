@@ -91,7 +91,7 @@ class Wallet {
     }
 
     const keyPair = Crypto.keyPair();
-    let address = Crypto.getAddressesFromPublicKey(keyPair.publicKey);
+    const address = Crypto.getAddressesFromPublicKey(keyPair.publicKey);
     const identity: Identity = {
       address,
       keyPair,

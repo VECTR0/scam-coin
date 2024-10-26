@@ -50,7 +50,7 @@ class P2PServer {
       Math.random().toString(36).substring(2, 15);
   }
 
-  log(...args: any[]) {
+  log(...args: unknown[]) {
     if (this.showDebug) {
       console.log(...args);
     }
