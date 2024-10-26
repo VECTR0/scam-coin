@@ -1,135 +1,287 @@
-import { Crypto } from './util';
+import { KeyObject } from 'crypto';
+import { Asymetric, Crypto } from './util';
 
-class Block {
-  readonly index: number; // or uuid
-  readonly previousHash: string;
-  readonly timestamp: number;
-  readonly data: string;
-  readonly difficulty: number;
-  readonly nonce: number;
+export class TxIn {
+  readonly txOutId: string;
+  readonly txOutIndex: number;
+  readonly signature: string;
 
-  constructor(
-    index: number,
-    previousHash: string,
-    timestamp: number,
-    data: string,
-    difficulty: number,
-    nonce: number,
-  ) {
-    this.index = index;
-    this.previousHash = previousHash;
-    this.timestamp = timestamp;
-    this.data = data;
-    this.difficulty = difficulty;
-    this.nonce = nonce;
-  }
-
-  calculateHash(): string {
-    const plain = `${this.index}${this.previousHash}${this.timestamp}${this.data}`;
-    return Crypto.hash(plain);
-    /*
-      consequence of the properties hash and previousHash is that a block can’t
-      be modified without changing the hash of every consecutive block.
-      */
-  }
-
-  generateNextBlock(blockData: string): Block {
-    const previousBlock: Block = this.getLatestBlock();
-    const nextIndex: number = previousBlock.index + 1;
-    const nextTimestamp: number = Date.now();
-    const newBlock = new Block(
-      nextIndex,
-      previousBlock.calculateHash(),
-      nextTimestamp,
-      blockData,
-      69, //FIXME
-      69, //FIXME
-    );
-    return newBlock;
-  }
-
-  getLatestBlock(): Block {
-    // TODO:
-    const block = new Block(3, 'prevhash', Date.now(), 'dejta', 6, 6);
-    return block;
-  }
-
-  findBlock = (
-    index: number,
-    previousHash: string,
-    timestamp: number,
-    data: string,
-    difficulty: number,
-  ): Block => {
-    let nonce = 0;
-    while (true) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const hash = new Block(
-        index,
-        previousHash,
-        timestamp,
-        data,
-        difficulty,
-        nonce,
-      ).calculateHash();
-
-      //   if (hashMatchesDifficulty(hash, difficulty)) {
-      //     return new Block(
-      //       index,
-      //       hash,
-      //       previousHash,
-      //       timestamp,
-      //       data,
-      //       difficulty,
-      //       nonce,
-      //     );
-      //   }
-      nonce++;
-    }
-  };
-}
-class TxIn {
-  txOutId: string;
-  txOutIndex: number;
-  signature: string;
-
-  constructor(txOutId: string, txOutIndex: number, signature: string) {
+  constructor(txOutId: string, txOutIndex: number, privateKey: KeyObject) {
     this.txOutId = txOutId;
     this.txOutIndex = txOutIndex;
-    this.signature = signature;
+    this.signature = this.sign(privateKey);
+  }
+
+  getData(): string {
+    return `${this.txOutId}-${this.txOutIndex}`;
+  }
+
+  sign(privateKey: KeyObject): string {
+    return Asymetric.sign(this.getData(), privateKey);
+  }
+
+  verifySignature(publicKey: KeyObject): boolean {
+    return Asymetric.verify(this.getData(), this.signature, publicKey);
   }
 }
-class TxOut {
-  address: string;
-  amount: number;
 
-  constructor(address: string, amount: number) {
+export class TxOut {
+  readonly address: KeyObject; // public key
+  readonly amount: number;
+
+  constructor(address: KeyObject, amount: number) {
     this.address = address;
     this.amount = amount;
   }
 }
-type Tx = { in: TxIn; out: TxOut };
-class Transaction {
-  id: string;
-  txs: Tx[];
 
-  constructor(id: string, txs: Tx[]) {
-    this.id = id;
-    this.txs = txs;
+export class Transaction {
+  txIns: TxIn[];
+  txOuts: TxOut[];
+
+  constructor(txIns: TxIn[], txOuts: TxOut[]) {
+    this.txIns = txIns;
+    this.txOuts = txOuts;
   }
 
-  getId(): string {
-    const txInContent: string = this.txs
-      .map((tx) => tx.in.txOutId + tx.in.txOutIndex)
-      .reduce((a, b) => a + b, '');
-
-    const txOutContent: string = this.txs
-      .map((tx) => tx.out.address + tx.out.amount)
-      .reduce((a, b) => a + b, '');
-
-    const plain = `${txInContent}${txOutContent}`;
-    const hash = Crypto.hash(plain);
-    return hash;
+  signTxIn(
+    txInIndex: number,
+    provateKey: KeyObject,
+    unspentTxOuts: TxOut[],
+  ): string {
+    throw Error('Not implemented');
   }
 }
-export default Block;
+
+export class TransPool {
+  private transactions: Transaction[];
+
+  constructor() {
+    this.transactions = [];
+  }
+
+  add(transaction: Transaction): void {
+    this.transactions.push(transaction);
+  }
+
+  getAll(): Transaction[] {
+    return this.transactions;
+  }
+
+  get(): Transaction | null {
+    // TODO: co tu ma byc
+    return this.transactions.length > 0 ? this.transactions[0] : null;
+  }
+
+  removeTrans(block: Block): void {
+    this.transactions = this.transactions.filter(
+      (tx) => !block.transactions.includes(tx),
+    );
+  }
+}
+
+export class Block {
+  readonly previousHash: string;
+  readonly timestamp: number;
+  readonly transactions: Transaction[];
+  hash: string;
+  nonce: number;
+  difficulty: number;
+
+  constructor(
+    previousHash: string,
+    transactions: Transaction[],
+    difficulty: number,
+  ) {
+    this.previousHash = previousHash;
+    this.timestamp = Date.now();
+    this.transactions = transactions;
+    this.difficulty = difficulty;
+    this.hash = this.calculateHash();
+    this.nonce = 0;
+  }
+
+  calculateHash(): string {
+    const plain = `${this.previousHash}${this.timestamp}${JSON.stringify(this.transactions)}${this.nonce}${this.difficulty}`;
+    return Crypto.hash(plain);
+  }
+
+  verify(): boolean {
+    return this.hash === this.calculateHash();
+  }
+
+  getPOWHash(): string {
+    return Array(this.difficulty + 1).join('0');
+  }
+}
+
+export class Blockchain {
+  private chain: Block[];
+  private difficulty: number;
+  private expectedTimeBetweenBlocks: number; // milliseconds
+  private lastBlockTime: number;
+
+  constructor(expectedTimeBetweenBlocks: number) {
+    this.chain = [this.createGenesisBlock()];
+    this.difficulty = 3;
+    this.expectedTimeBetweenBlocks = expectedTimeBetweenBlocks;
+    this.lastBlockTime = Date.now();
+  }
+
+  mine(transactions: Transaction[]): Block {
+    const lastBlock = this.chain[this.chain.length - 1];
+    const newBlock = new Block(lastBlock.hash, transactions, this.difficulty);
+
+    const target = newBlock.getPOWHash();
+
+    while (newBlock.hash.substring(0, this.difficulty) !== target) {
+      newBlock.nonce++;
+      newBlock.hash = newBlock.calculateHash();
+    }
+
+    this.add(newBlock);
+    return newBlock;
+  }
+
+  checkBalance(identity: KeyObject): number {
+    let balance = 0;
+    for (const block of this.chain) {
+      for (const tx of block.transactions) {
+        for (const txOut of tx.txOuts) {
+          if (txOut.address === identity) {
+            balance += txOut.amount;
+          }
+        }
+        for (const txIn of tx.txIns) {
+          const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
+          if (referencedTxOut && referencedTxOut.address === identity) {
+            balance -= referencedTxOut.amount;
+          }
+        }
+      }
+    }
+    return balance;
+  }
+
+  getDifficulty(): number {
+    return this.difficulty;
+  }
+
+  updateDifficulty(): void {
+    const currentTime = Date.now();
+    const timeTaken = currentTime - this.lastBlockTime;
+
+    if (timeTaken < this.expectedTimeBetweenBlocks) {
+      this.difficulty++;
+    } else if (
+      timeTaken > this.expectedTimeBetweenBlocks &&
+      this.difficulty > 1
+    ) {
+      this.difficulty--;
+    }
+  }
+
+  verifyBlockchain(): void {
+    for (let i = 1; i < this.chain.length; i++) {
+      const currentBlock = this.chain[i];
+      const previousBlock = this.chain[i - 1];
+
+      if (!currentBlock.verify()) {
+        throw new Error(
+          `Invalid block hash at block ${i}. Expected: ${currentBlock.calculateHash()}, Found: ${currentBlock.hash}`,
+        );
+      }
+
+      if (currentBlock.previousHash !== previousBlock.hash) {
+        throw new Error(
+          `Invalid previous hash at block ${i}. Expected: ${previousBlock.hash}, Found: ${currentBlock.previousHash}`,
+        );
+      }
+
+      const target = currentBlock.getPOWHash();
+      if (!currentBlock.hash.startsWith(target)) {
+        throw new Error(
+          `Invalid proof of work at block ${i}. Hash does not meet difficulty requirements.`,
+        );
+      }
+
+      if (currentBlock.timestamp <= previousBlock.timestamp) {
+        throw new Error(
+          `Invalid timestamp at block ${i}. Timestamp must be greater than the previous block's timestamp.`,
+        );
+      }
+
+      for (const tx of currentBlock.transactions) {
+        this.verifyTransaction(tx);
+      }
+    }
+  }
+
+  private add(block: Block): void {
+    const lastBlock = this.chain[this.chain.length - 1];
+
+    if (block.previousHash !== lastBlock.hash) {
+      throw new Error('Invalid block: incorrect previous hash.');
+    }
+
+    if (!block.verify()) {
+      throw new Error('Invalid block: verification failed.');
+    }
+
+    this.chain.push(block);
+    this.updateDifficulty();
+    this.lastBlockTime = Date.now();
+  }
+
+  private verifyTransaction(transaction: Transaction): void {
+    let totalTxIn = 0;
+    let totalTxOut = 0;
+
+    for (const txIn of transaction.txIns) {
+      const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
+      if (!referencedTxOut) {
+        throw new Error(
+          `Invalid transaction input: TxOut not found for TxIn with ID ${txIn.txOutId} at index ${txIn.txOutIndex}`,
+        );
+      }
+
+      // TODO FIXME Verify signature
+      if (!txIn.verifySignature(referencedTxOut.address)) {
+        throw new Error(
+          `Invalid signature for TxIn referencing TxOut: ${txIn.txOutId} at index ${txIn.txOutIndex}`,
+        );
+      }
+
+      totalTxIn += referencedTxOut.amount;
+    }
+
+    for (const txOut of transaction.txOuts) {
+      totalTxOut += txOut.amount;
+    }
+
+    if (totalTxIn !== totalTxOut) {
+      throw new Error(
+        `Transaction input total (${totalTxIn}) does not equal output total (${totalTxOut})`,
+      );
+    }
+  }
+
+  private getTransactionId(transaction: Transaction): string {
+    return Crypto.hash(JSON.stringify(transaction));
+  }
+
+  private findTxOut(txOutId: string, txOutIndex: number): TxOut | null {
+    for (const block of this.chain) {
+      for (const tx of block.transactions) {
+        if (txOutId === this.getTransactionId(tx)) {
+          return tx.txOuts[txOutIndex];
+        }
+      }
+    }
+    return null;
+  }
+
+  private createGenesisBlock(): Block {
+    return new Block('0', [], this.difficulty);
+  }
+}
