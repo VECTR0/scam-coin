@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { readFileSync, writeFileSync } from 'fs';
-import { Crypto, KeyPair } from './util';
+import { AES, Asymetric, Crypto, KeyPair } from './util';
 import { join } from 'path';
 
 type Identity = {
@@ -23,7 +23,7 @@ class Wallet {
   private saveCounter: number = 0;
   private filename: string | undefined = undefined;
 
-  constructor() { }
+  constructor() {}
 
   public static getInstance(): Wallet {
     if (!this.instance) {
@@ -43,7 +43,7 @@ class Wallet {
     try {
       const filenamePath = this.getPath(filename);
       const encryptedData = readFileSync(filenamePath, { encoding: 'utf-8' });
-      const decryptedData = Crypto.decryptAES(encryptedData, password);
+      const decryptedData = AES.decrypt(encryptedData, password);
       const walletData = JSON.parse(decryptedData) as WalletStringify;
       //   TODO: some checks comparing currently loaded wallet with the one loaded from disk (timestamps, etc)
 
@@ -66,10 +66,7 @@ class Wallet {
       saveCounter,
     } as WalletStringify;
 
-    const encryptedData = Crypto.encryptAES(
-      JSON.stringify(walletData),
-      password,
-    );
+    const encryptedData = AES.encrypt(JSON.stringify(walletData), password);
     const filenamePath = this.getPath(filename);
 
     writeFileSync(filenamePath, encryptedData, { encoding: 'utf-8' });
@@ -90,7 +87,9 @@ class Wallet {
       );
     }
 
-    const keyPair = Crypto.keyPair();
+
+    const keyPair = Asymetric.genKeyPair();
+
     const address = Crypto.getAddressesFromPublicKey(keyPair.publicKey);
     const identity: Identity = {
       address,

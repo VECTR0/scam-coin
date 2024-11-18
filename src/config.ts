@@ -23,6 +23,19 @@ const EnvSchema = z.object({
     })
     .min(32)
     .max(256),
+
+  MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS: z
+    .number({
+      description: 'Thime difference between consecutive blocks, in seconds.',
+    })
+    .min(1, {
+      message: 'The minimum timestamp difference must be at least 1 second.',
+    })
+    .max(3600, {
+      message:
+        'The maximum timestamp difference is set to 3600 seconds (1 hour).',
+    })
+    .default(60),
 });
 
 export const env = EnvSchema.parse(process.env);
