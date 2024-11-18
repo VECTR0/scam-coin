@@ -1,4 +1,4 @@
-import { KeyObject } from 'crypto';
+import { createPublicKey, KeyObject } from 'crypto';
 import { Asymetric, Crypto } from './util';
 import { env } from './config';
 
@@ -7,10 +7,15 @@ export class TxIn {
   readonly txOutIndex: number;
   readonly signature: string;
 
-  constructor(txOutId: string, txOutIndex: number, privateKey: KeyObject) {
+  constructor(
+    txOutId: string,
+    txOutIndex: number,
+    privateKey: KeyObject | string,
+  ) {
     this.txOutId = txOutId;
     this.txOutIndex = txOutIndex;
-    this.signature = this.sign(privateKey);
+    this.signature =
+      privateKey instanceof KeyObject ? this.sign(privateKey) : privateKey;
   }
 
   getData(): string {
@@ -24,6 +29,15 @@ export class TxIn {
   verifySignature(publicKey: KeyObject): boolean {
     return Asymetric.verify(this.getData(), this.signature, publicKey);
   }
+
+  static serialize(txIn: TxIn): string {
+    return JSON.stringify(txIn);
+  }
+
+  static deserialize(json: string): TxIn {
+    const data = JSON.parse(json);
+    return new TxIn(data.txOutId, data.txOutIndex, data.signature);
+  }
 }
 
 export class TxOut {
@@ -33,6 +47,23 @@ export class TxOut {
   constructor(address: KeyObject, amount: number) {
     this.address = address;
     this.amount = amount;
+  }
+
+  static serialize(txOut: TxOut): string {
+    const address = txOut.address.export({
+      type: 'spki',
+      format: 'pem',
+    }) as string;
+    return JSON.stringify({
+      address,
+      amount: txOut.amount,
+    });
+  }
+
+  static deserialize(json: string): TxOut {
+    const data = JSON.parse(json);
+    const address = createPublicKey({ key: data.address, format: 'pem' });
+    return new TxOut(address, data.amount);
   }
 }
 
@@ -58,13 +89,23 @@ export class Transaction {
     return Crypto.hash(plain);
   }
 
-  // signTxIn(
-  //   txInIndex: number,
-  //   privateKey: KeyObject,
-  //   unspentTxOuts: TxOut[],
-  // ): string {
-  //   throw Error('Not implemented');
-  // }
+  static serialize(transaction: Transaction): string {
+    return JSON.stringify({
+      txIns: transaction.txIns.map((x) => JSON.parse(TxIn.serialize(x))),
+      txOuts: transaction.txOuts.map((x) => JSON.parse(TxOut.serialize(x))),
+    });
+  }
+
+  static deserialize(json: string): Transaction {
+    const data = JSON.parse(json);
+    const txIns: TxIn[] = data.txIns.map((txInJson: string) =>
+      TxIn.deserialize(JSON.stringify(txInJson)),
+    );
+    const txOuts: TxOut[] = data.txOuts.map((txOutJson: string) =>
+      TxOut.deserialize(JSON.stringify(txOutJson)),
+    );
+    return new Transaction(txIns, txOuts);
+  }
 }
 
 export class TransPool {
@@ -83,7 +124,6 @@ export class TransPool {
   }
 
   get(): Transaction | null {
-    // TODO: co tu ma byc
     return this.transactions.length > 0 ? this.transactions[0] : null;
   }
 
@@ -96,8 +136,8 @@ export class TransPool {
 
 export class Block {
   readonly previousHash: string;
-  readonly timestamp: number;
   readonly transactions: Transaction[];
+  timestamp: number;
   hash: string;
   nonce: number;
   difficulty: number;
@@ -127,6 +167,31 @@ export class Block {
   getPOWHash(): string {
     return Array(this.difficulty + 1).join('0');
   }
+
+  static serialize(block: Block): string {
+    return JSON.stringify({
+      previousHash: block.previousHash,
+      timestamp: block.timestamp,
+      transactions: block.transactions.map((tx) => Transaction.serialize(tx)),
+      difficulty: block.difficulty,
+      hash: block.hash,
+      nonce: block.nonce,
+    });
+  }
+
+  static deserialize(json: string): Block {
+    const data = JSON.parse(json);
+
+    const transactions = data.transactions.map((txJson: string) =>
+      Transaction.deserialize(txJson),
+    );
+
+    const block = new Block(data.previousHash, transactions, data.difficulty);
+    block.hash = data.hash;
+    block.nonce = data.nonce;
+    block.timestamp = data.timestamp;
+    return block;
+  }
 }
 
 export class Blockchain {
@@ -153,6 +218,10 @@ export class Blockchain {
 
     this.add(newBlock);
     return newBlock;
+  }
+
+  hasBlock(block: Block): boolean {
+    return this.chain.some((b) => b.hash === block.hash);
   }
 
   checkBalance(identity: KeyObject): number {

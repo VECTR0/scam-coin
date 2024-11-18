@@ -1,19 +1,31 @@
 import { strict as assert } from 'node:assert';
 import { beforeEach, describe, it } from 'node:test';
-import { Blockchain, Transaction, TxIn, TxOut, TransPool } from '../src/block';
+import {
+  Blockchain,
+  Transaction,
+  TxIn,
+  TxOut,
+  TransPool,
+  Block,
+} from '../src/block';
 import { Asymetric } from '../src/util';
+import { KeyObject } from 'node:crypto';
 
-const { privateKey, publicKey } = Asymetric.genKeyPair();
 // const { privateKey: privateKey2, publicKey: publicKey2 } =
 //   Asymetric.genKeyPair();
 
 describe('Blockchain Tests', () => {
   let blockchain: Blockchain;
   let transPool: TransPool;
+  let privateKey: KeyObject;
+  let publicKey: KeyObject;
 
   beforeEach(() => {
     blockchain = new Blockchain(2);
     transPool = new TransPool();
+    const { privateKey: sc, publicKey: pk } = Asymetric.genKeyPair();
+    privateKey = sc;
+    publicKey = pk;
   });
 
   it('should create a genesis block', () => {
@@ -133,4 +145,70 @@ describe('Blockchain Tests', () => {
   //       assert.equal(blockchain.getDifficulty(), 3);
   //     }, 1500);
   //   });
+
+  describe('Transaction Serialization and Deserialization', () => {
+    it('should correctly serialize and deserialize a TxIn', () => {
+      const txIn = new TxIn('prevTxId', 0, privateKey);
+      const serialized = TxIn.serialize(txIn);
+      const deserialized = TxIn.deserialize(serialized);
+
+      assert.strictEqual(deserialized.txOutId, txIn.txOutId);
+      assert.strictEqual(deserialized.txOutIndex, txIn.txOutIndex);
+      assert.strictEqual(deserialized.signature, txIn.signature);
+    });
+
+    it('should correctly serialize and deserialize a TxOut', () => {
+      const txOut = new TxOut(publicKey, 100);
+      const serialized = TxOut.serialize(txOut);
+      const deserialized = TxOut.deserialize(serialized);
+
+      assert.strictEqual(deserialized.amount, txOut.amount);
+      assert.strictEqual(
+        deserialized.address.export({ type: 'spki', format: 'pem' }),
+        publicKey.export({ type: 'spki', format: 'pem' }),
+      );
+    });
+
+    it('should correctly serialize and deserialize a Transaction', () => {
+      const txIn = new TxIn('prevTxId', 0, privateKey);
+      const txOut = new TxOut(publicKey, 100);
+      const transaction = new Transaction([txIn], [txOut]);
+
+      const serialized = Transaction.serialize(transaction);
+      const deserialized = Transaction.deserialize(serialized);
+
+      assert.strictEqual(deserialized.txIns.length, 1);
+      assert.strictEqual(deserialized.txOuts.length, 1);
+      assert.strictEqual(deserialized.txIns[0].txOutId, txIn.txOutId);
+      assert.strictEqual(deserialized.txOuts[0].amount, txOut.amount);
+      assert.strictEqual(
+        deserialized.txOuts[0].address.export({ type: 'spki', format: 'pem' }),
+        publicKey.export({ type: 'spki', format: 'pem' }),
+      );
+    });
+  });
+
+  describe('Block Serialization and Deserialization with Transactions', () => {
+    it('should correctly serialize and deserialize a Block with Transactions', () => {
+      const txIn = new TxIn('prevTxId', 0, privateKey);
+      const txOut = new TxOut(publicKey, 100);
+      const transaction = new Transaction([txIn], [txOut]);
+
+      const block = new Block('0', [transaction], 3);
+      const serialized = Block.serialize(block);
+      const deserializedBlock = Block.deserialize(serialized);
+
+      assert.strictEqual(deserializedBlock.previousHash, block.previousHash);
+      assert.strictEqual(deserializedBlock.difficulty, block.difficulty);
+      assert.strictEqual(deserializedBlock.transactions.length, 1);
+      assert.strictEqual(
+        deserializedBlock.transactions[0].txIns[0].txOutId,
+        transaction.txIns[0].txOutId,
+      );
+      assert.strictEqual(
+        deserializedBlock.transactions[0].txOuts[0].amount,
+        100,
+      );
+    });
+  });
 });
