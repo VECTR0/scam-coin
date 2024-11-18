@@ -4,6 +4,8 @@ enum PacketType {
   CONNECT = 0x01,
   GET_NEIGHBORS = 0x02,
   HEARTBEAT = 0x03,
+  NEW_TRANSACTION = 0x04,
+  NEW_BLOCK = 0x05,
 }
 
 enum PacketFlag {
@@ -39,6 +41,8 @@ class P2PServer {
   tcpServer: Server | null;
   name: string;
   showDebug: boolean = false;
+  newTransactionCallback: (serializedTransaction: string) => void;
+  newBlockCallback: (serializedBlock: string) => void;
 
   constructor() {
     this.neighbors = [];
@@ -48,6 +52,8 @@ class P2PServer {
     this.name =
       Date.now().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
+    this.newTransactionCallback = (serializedTransaction: string) => { };
+    this.newBlockCallback = (serializedBlock: string) => { };
   }
 
   log(...args: unknown[]) {
@@ -201,7 +207,7 @@ class P2PServer {
     );
   }
 
-  connectTo(address: string) {
+  public connectTo(address: string) {
     const [ip, port] = address.split(':');
     const socket = connect(Number(port), ip, () => {
       this.log(`Connected to node ${address}`);
@@ -216,7 +222,7 @@ class P2PServer {
     });
   }
 
-  send(socket: Socket, type: PacketType, flag: PacketFlag, data?: string) {
+  private send(socket: Socket, type: PacketType, flag: PacketFlag, data?: string) {
     if (socket.destroyed) return;
     let b = Buffer.alloc(6);
     b.writeUInt8(type, 0);
@@ -230,6 +236,12 @@ class P2PServer {
       socket.remoteAddress + ':' + socket.remotePort,
       data,
     );
+  }
+
+  private sendToAll(type: PacketType, flag: PacketFlag, data: string) {
+    this.neighbors.forEach((n) => {
+      this.send(n.socket, type, flag, data);
+    });
   }
 
   private handleInfoPacket(packet: Packet, neighbor: Neighbor) {
@@ -316,12 +328,18 @@ class P2PServer {
       case PacketType.HEARTBEAT:
         neighbor.lastHeartbeat = Date.now();
         break;
+      case PacketType.NEW_TRANSACTION:
+        this.newTransactionCallback(packet.json);
+        break;
+      case PacketType.NEW_BLOCK:
+        this.newBlockCallback(packet.json);
+        break;
       default:
         this.log(`!!!`, `Unknown packet type: ${packet.type}`);
     }
   }
 
-  sendToAllNeighbors(type: PacketType, flag: PacketFlag, data: string) {
+  private sendToAllNeighbors(type: PacketType, flag: PacketFlag, data: string) {
     this.neighbors.forEach((n) => {
       try {
         this.send(n.socket, type, flag, data);
@@ -331,8 +349,7 @@ class P2PServer {
     });
   }
 
-  getNeighborsAddresses() {
-    // return []
+  public getNeighborsAddresses() {
     return this.neighbors
       .map((n) => ({
         name: n.name,
@@ -341,11 +358,12 @@ class P2PServer {
       .filter((n) => n.name !== undefined && n.address !== undefined);
   }
 
-  updateBlockchain() {
-    // check local version
+  public broadcastNewTransaction(serializedTransaction: string) {
+    this.sendToAllNeighbors(PacketType.NEW_TRANSACTION, PacketFlag.NONE, serializedTransaction);
   }
-  blockCreated() {
-    // notify neighbors
+
+  public broadcastNewBlock(serializedBlock: string) {
+    this.sendToAllNeighbors(PacketType.NEW_BLOCK, PacketFlag.NONE, serializedBlock);
   }
 }
 

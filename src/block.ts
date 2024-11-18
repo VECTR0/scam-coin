@@ -209,6 +209,10 @@ export class Blockchain {
     this.lastBlockTime = Date.now();
   }
 
+  public getAll(): Block[] {
+    return this.chain;
+  }
+
   mine(transactions: Transaction[]): Block {
     const lastBlock = this.chain[this.chain.length - 1];
     const newBlock = new Block(lastBlock.hash, transactions, this.difficulty);
@@ -255,7 +259,7 @@ export class Blockchain {
   updateDifficulty(): void {
     const currentTime = Date.now();
     const timeTaken = currentTime - this.lastBlockTime;
-
+    
     if (timeTaken < env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS) {
       this.difficulty++;
     } else if (
@@ -305,7 +309,7 @@ export class Blockchain {
     }
   }
 
-  private add(block: Block): void {
+  public add(block: Block): void {
     const lastBlock = this.chain[this.chain.length - 1];
 
     if (block.previousHash !== lastBlock.hash) {
@@ -370,6 +374,8 @@ export class Blockchain {
   }
 
   private createGenesisBlock(): Block {
-    return new Block('0', [], this.difficulty);
+    // return new Block('0', [], this.difficulty);
+    const serialized = '{"previousHash":"0","timestamp":1731965982450,"transactions":[],"hash":"d5303571b790f83168851382ca17fc67f00aea5b9e66aec99639fd1f32982344","nonce":0}';
+    return Block.deserialize(serialized);
   }
 }

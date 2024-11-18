@@ -31,11 +31,11 @@ const EnvSchema = z.object({
     .min(1, {
       message: 'The minimum timestamp difference must be at least 1 second.',
     })
-    .max(3600, {
+    .max(3600*1000, {
       message:
         'The maximum timestamp difference is set to 3600 seconds (1 hour).',
     })
-    .default(60),
+    .default(5*1000),
 });
 
 export const env = EnvSchema.parse(process.env);
