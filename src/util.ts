@@ -93,10 +93,12 @@ export class Crypto {
     const hash = createHash('sha256').update(publicKeyBytes).digest();
     const prefix = Buffer.from([0x42]);
     const extended = Buffer.concat([prefix, Buffer.from(hash)]);
+
     const checksum = createHash('sha256')
       .update(extended)
       .digest()
       .subarray(0, 4);
+
     const buffer = Buffer.concat([extended, checksum]);
     const address = bs58.encode(buffer);
     return address;

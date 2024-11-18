@@ -87,7 +87,9 @@ class Wallet {
       );
     }
 
+
     const keyPair = Asymetric.genKeyPair();
+
     const address = Crypto.getAddressesFromPublicKey(keyPair.publicKey);
     const identity: Identity = {
       address,
