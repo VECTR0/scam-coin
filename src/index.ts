@@ -70,7 +70,7 @@ peerServer.getTransactionsPoolCallback = () => {
 
 rl.on('line', (input) => {
     const [command, ...args] = input.split(' ');
-    switch (command) {
+    switch (command) { //TODO: refactor to fancy dynamic options list
         case 'debug':
             peerServer.showDebug = !peerServer.showDebug;
             console.log('Debug mode:', peerServer.showDebug);
@@ -158,7 +158,6 @@ rl.on('line', (input) => {
             }
         case 'mine':
             {
-                // TODO: check if sth in pool
                 const transaction = transPool.get()
                 if(transaction == null){
                     console.log('No transactions in pool');
