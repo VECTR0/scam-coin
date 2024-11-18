@@ -3,7 +3,7 @@ import readline from 'readline';
 import Wallet from './wallet';
 import {Block, Blockchain, Transaction, TransPool, TxIn, TxOut} from './block';
 import fs from 'fs';
-import { Asymetric, Crypto } from './util';
+import { Asymetric } from './util';
 
 const peerServer = new P2PServer();
 
@@ -145,7 +145,7 @@ rl.on('line', (input) => {
                     const randomId = crypto.randomUUID();
                     const txIn = new TxIn(randomId, 0, privateKey);
                     const txOut = new TxOut(publicKey, 100);
-                    var transaction = new Transaction([txIn], [txOut]);
+                    const transaction = new Transaction([txIn], [txOut]);
                     transPool.add(transaction);
                     const serializedTransaction = Transaction.serialize(transaction);
                     peerServer.broadcastNewTransaction(serializedTransaction);

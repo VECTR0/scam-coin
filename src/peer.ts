@@ -56,8 +56,8 @@ class P2PServer {
     this.name =
       Date.now().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
-    this.newTransactionCallback = (serializedTransaction: string) => { };
-    this.newBlockCallback = (serializedBlock: string) => { };
+    this.newTransactionCallback = () => { };
+    this.newBlockCallback = () => { };
     this.getBlockChainCallback = () => [];
     this.getTransactionsPoolCallback = () => [];
   }
@@ -344,7 +344,7 @@ class P2PServer {
         break;
       case PacketType.GET_TRANSACTIONS_POOL:
         if(packet.flag === PacketFlag.REQUEST){
-          var transactions = this.getTransactionsPoolCallback();
+          const transactions = this.getTransactionsPoolCallback();
           for (const transaction of transactions) {
             this.send(neighbor.socket, PacketType.NEW_TRANSACTION, PacketFlag.RESPONSE, transaction);
           }
@@ -352,7 +352,7 @@ class P2PServer {
         break;
       case PacketType.GET_BLOCKCHAIN:
         if(packet.flag === PacketFlag.REQUEST){
-          var blocks = this.getBlockChainCallback();
+          const blocks = this.getBlockChainCallback();
           for (const block of blocks) {
             this.send(neighbor.socket, PacketType.NEW_BLOCK, PacketFlag.RESPONSE, block);
           }
