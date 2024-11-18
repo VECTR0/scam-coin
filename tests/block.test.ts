@@ -4,13 +4,15 @@ import { Blockchain, Transaction, TxIn, TxOut, TransPool } from '../src/block';
 import { Asymetric } from '../src/util';
 
 const { privateKey, publicKey } = Asymetric.genKeyPair();
+// const { privateKey: privateKey2, publicKey: publicKey2 } =
+//   Asymetric.genKeyPair();
 
 describe('Blockchain Tests', () => {
   let blockchain: Blockchain;
   let transPool: TransPool;
 
   beforeEach(() => {
-    blockchain = new Blockchain(1000);
+    blockchain = new Blockchain(2);
     transPool = new TransPool();
   });
 
@@ -20,16 +22,46 @@ describe('Blockchain Tests', () => {
     assert.deepEqual(genesisBlock.transactions, []);
   });
 
+  //
   // it('should create and verify a transaction', () => {
   //   const txOut = new TxOut(publicKey, 50);
   //   const txIn = new TxIn('dummyTxOutId', 0, privateKey);
   //   const transaction = new Transaction([txIn], [txOut]);
 
   //   transPool.add(transaction);
+  //   console.log('trans:\n', transPool);
+  //   console.log('txin:\n', transaction.getId());
+  //   console.log('trans:\n', blockchain.verifyTransaction(transaction));
   //   assert.equal(transPool.getAll().length, 1);
 
   //   assert.doesNotThrow(() => blockchain['verifyTransaction'](transaction));
   // });
+
+  it('should mine a valid block and add it to the chain', () => {
+    const initialLength = blockchain['chain'].length;
+
+    const txIn = new TxIn('previousTxId', 0, privateKey);
+    const txOut1 = new TxOut(publicKey, 100);
+    const txOut2 = new TxOut(publicKey, 50);
+    const transaction = new Transaction([txIn], [txOut1, txOut2]);
+
+    const minedBlock = blockchain.mine([transaction]);
+
+    // Validate chain length.
+    assert.strictEqual(blockchain['chain'].length, initialLength + 1);
+
+    // Validate that the new block has the correct previous hash.
+    assert.strictEqual(
+      minedBlock.previousHash,
+      blockchain['chain'][initialLength - 1].hash,
+    );
+
+    const diff = minedBlock.difficulty;
+    assert.strictEqual(minedBlock.hash.substring(0, diff), '0'.repeat(diff));
+
+    // Validate transactions are correctly included.
+    assert.deepStrictEqual(minedBlock.transactions, [transaction]);
+  });
 
   it('should mine a block with transactions', () => {
     const txOut = new TxOut(publicKey, 50);

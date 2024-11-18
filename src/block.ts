@@ -1,5 +1,6 @@
 import { KeyObject } from 'crypto';
 import { Asymetric, Crypto } from './util';
+import { env } from './config';
 
 export class TxIn {
   readonly txOutId: string;
@@ -44,13 +45,26 @@ export class Transaction {
     this.txOuts = txOuts;
   }
 
-  signTxIn(
-    txInIndex: number,
-    provateKey: KeyObject,
-    unspentTxOuts: TxOut[],
-  ): string {
-    throw Error('Not implemented');
+  getId(): string {
+    const txInContent: string = this.txIns
+      .map((txIn: TxIn) => `${txIn.txOutId}${txIn.txOutIndex}`)
+      .reduce((a, b) => a + b, '');
+
+    const txOutContent: string = this.txOuts
+      .map((txOut: TxOut) => `${txOut.address}${txOut.amount}`)
+      .reduce((a, b) => a + b, '');
+
+    const plain = `${txInContent}${txOutContent}`;
+    return Crypto.hash(plain);
   }
+
+  // signTxIn(
+  //   txInIndex: number,
+  //   privateKey: KeyObject,
+  //   unspentTxOuts: TxOut[],
+  // ): string {
+  //   throw Error('Not implemented');
+  // }
 }
 
 export class TransPool {
@@ -118,13 +132,11 @@ export class Block {
 export class Blockchain {
   private chain: Block[];
   private difficulty: number;
-  private expectedTimeBetweenBlocks: number; // milliseconds
   private lastBlockTime: number;
 
-  constructor(expectedTimeBetweenBlocks: number) {
+  constructor(difficulty: number) {
     this.chain = [this.createGenesisBlock()];
-    this.difficulty = 3;
-    this.expectedTimeBetweenBlocks = expectedTimeBetweenBlocks;
+    this.difficulty = difficulty;
     this.lastBlockTime = Date.now();
   }
 
@@ -171,10 +183,10 @@ export class Blockchain {
     const currentTime = Date.now();
     const timeTaken = currentTime - this.lastBlockTime;
 
-    if (timeTaken < this.expectedTimeBetweenBlocks) {
+    if (timeTaken < env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS) {
       this.difficulty++;
     } else if (
-      timeTaken > this.expectedTimeBetweenBlocks &&
+      timeTaken > env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS &&
       this.difficulty > 1
     ) {
       this.difficulty--;
@@ -205,9 +217,12 @@ export class Blockchain {
         );
       }
 
-      if (currentBlock.timestamp <= previousBlock.timestamp) {
+      if (
+        currentBlock.timestamp - env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS <=
+        previousBlock.timestamp
+      ) {
         throw new Error(
-          `Invalid timestamp at block ${i}. Timestamp must be greater than the previous block's timestamp.`,
+          `Invalid timestamp at block ${i}. Timestamp must be greater ${env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS}s than the previous block's timestamp.`,
         );
       }
 
@@ -233,7 +248,7 @@ export class Blockchain {
     this.lastBlockTime = Date.now();
   }
 
-  private verifyTransaction(transaction: Transaction): void {
+  verifyTransaction(transaction: Transaction): void {
     let totalTxIn = 0;
     let totalTxOut = 0;
 
