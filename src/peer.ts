@@ -6,6 +6,8 @@ enum PacketType {
   HEARTBEAT = 0x03,
   NEW_TRANSACTION = 0x04,
   NEW_BLOCK = 0x05,
+  GET_TRANSACTIONS_POOL = 0x06,
+  GET_BLOCKCHAIN = 0x07,
 }
 
 enum PacketFlag {
@@ -43,6 +45,8 @@ class P2PServer {
   showDebug: boolean = false;
   newTransactionCallback: (serializedTransaction: string) => void;
   newBlockCallback: (serializedBlock: string) => void;
+  getBlockChainCallback: () => string[];
+  getTransactionsPoolCallback: () => string[];
 
   constructor() {
     this.neighbors = [];
@@ -54,6 +58,8 @@ class P2PServer {
       Math.random().toString(36).substring(2, 15);
     this.newTransactionCallback = (serializedTransaction: string) => { };
     this.newBlockCallback = (serializedBlock: string) => { };
+    this.getBlockChainCallback = () => [];
+    this.getTransactionsPoolCallback = () => [];
   }
 
   log(...args: unknown[]) {
@@ -219,6 +225,8 @@ class P2PServer {
         isServer: true,
       };
       this.addNewNeighbor(neighbor);
+      this.send(socket, PacketType.GET_BLOCKCHAIN, PacketFlag.REQUEST);
+      this.send(socket, PacketType.GET_TRANSACTIONS_POOL, PacketFlag.REQUEST);
     });
   }
 
@@ -333,6 +341,22 @@ class P2PServer {
         break;
       case PacketType.NEW_BLOCK:
         this.newBlockCallback(packet.json);
+        break;
+      case PacketType.GET_TRANSACTIONS_POOL:
+        if(packet.flag === PacketFlag.REQUEST){
+          var transactions = this.getTransactionsPoolCallback();
+          for (const transaction of transactions) {
+            this.send(neighbor.socket, PacketType.NEW_TRANSACTION, PacketFlag.RESPONSE, transaction);
+          }
+        }
+        break;
+      case PacketType.GET_BLOCKCHAIN:
+        if(packet.flag === PacketFlag.REQUEST){
+          var blocks = this.getBlockChainCallback();
+          for (const block of blocks) {
+            this.send(neighbor.socket, PacketType.NEW_BLOCK, PacketFlag.RESPONSE, block);
+          }
+        }
         break;
       default:
         this.log(`!!!`, `Unknown packet type: ${packet.type}`);

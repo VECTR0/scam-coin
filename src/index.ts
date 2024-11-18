@@ -60,6 +60,14 @@ peerServer.newTransactionCallback = (serializedTransaction) => {
     }
 };
 
+peerServer.getBlockChainCallback = () => {
+    return blockchain.getAll().map((block) => Block.serialize(block));
+}
+
+peerServer.getTransactionsPoolCallback = () => {
+    return transPool.getAll().map((transaction) => Transaction.serialize(transaction));
+}
+
 rl.on('line', (input) => {
     const [command, ...args] = input.split(' ');
     switch (command) {
