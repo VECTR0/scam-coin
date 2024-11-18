@@ -132,6 +132,10 @@ export class TransPool {
       (tx) => !block.transactions.includes(tx),
     );
   }
+
+  hasTrans(trans: Transaction): boolean {
+    return this.transactions.some((t) => t.getId() === trans.getId());
+  }
 }
 
 export class Block {
