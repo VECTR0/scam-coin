@@ -296,23 +296,23 @@ rl.on('line', (input) => {
         }
         case 'help':
             console.log('Available commands:');
-            console.log('debug - Toggle debug mode');
-            console.log('clear - Clear console');
-            console.log('dir - List wallet files');
+            console.log('debug  - Toggle debug mode');
+            console.log('clear  - Clear console');
+            console.log('dir    - List wallet files');
             console.log('load <filename> <password> - Load wallet from file');
-            console.log('reset - Reset wallet');
+            console.log('reset  - Reset wallet');
             console.log('save <filename> <password> - Save wallet to file (creates new if not exists)');
-            console.log('init - Create new wallet');
+            console.log('init   - Create new wallet');
             console.log('create - Create new identity and saves to wallet');
-            console.log('list - List identities');
-            console.log('peers - List connected peers');
+            console.log('list   - List identities');
+            console.log('peers  - List connected peers');
             console.log('trans <identity> <to> <amount> - Add new transation');
-            console.log('mine - Starts mining first transaction in mempool or coinbase transaction');
-            console.log('pool - Prints transaction pool');
-            console.log('chain - Prints blockchain');
-            console.log('money - Prints all transactions');
-            console.log('exit - Exit program');
-            console.log('help - Show this help');
+            console.log('mine   - Starts mining first transaction in mempool or coinbase transaction');
+            console.log('pool   - Prints transaction pool');
+            console.log('chain  - Prints blockchain');
+            console.log('money  - Prints all transactions');
+            console.log('exit   - Exit program');
+            console.log('help   - Show this help');
             console.log(' ');
             console.log('INITIAL SETUP:');
             console.log('init');
