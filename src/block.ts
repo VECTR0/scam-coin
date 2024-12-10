@@ -2,90 +2,125 @@ import { createPublicKey, KeyObject } from 'crypto';
 import { Asymetric, Crypto } from './util';
 import { env } from './config';
 
+type PublicKeyHash = string;
+
+class UTXO {
+  txOutId: string;
+  txOutIndex: number;
+  amount: number;
+
+  constructor(txOutId: string, txOutIndex: number, amount: number) {
+    this.txOutId = txOutId;
+    this.txOutIndex = txOutIndex;
+    this.amount = amount;
+  }
+
+  stringify(): string {
+    const json = JSON.stringify(this)
+    return json
+  }
+}
+
+type UnspentResult = {
+  balance: number,
+  utxos: UTXO[]
+}
+
 export class TxIn {
   readonly txOutId: string;
   readonly txOutIndex: number;
-  readonly signature: string;
+  readonly publicKey: KeyObject;
+  signature: string | null;
 
   constructor(
     txOutId: string,
     txOutIndex: number,
-    privateKey: KeyObject | string,
+    publicKey: KeyObject,
+    signature: string | null,
   ) {
     this.txOutId = txOutId;
     this.txOutIndex = txOutIndex;
-    this.signature =
-      privateKey instanceof KeyObject ? this.sign(privateKey) : privateKey;
+    this.publicKey = publicKey
+    this.signature = signature
   }
 
   getData(): string {
     return `${this.txOutId}-${this.txOutIndex}`;
   }
 
-  sign(privateKey: KeyObject): string {
-    return Asymetric.sign(this.getData(), privateKey);
+  sign(privateKey: KeyObject) {
+    this.signature = Asymetric.sign(this.getData(), privateKey);
   }
 
-  verifySignature(publicKey: KeyObject): boolean {
-    return Asymetric.verify(this.getData(), this.signature, publicKey);
+  verifySignature(): boolean {
+    if (!this.signature) {
+      return false;
+    }
+    return Asymetric.verify(this.getData(), this.signature, this.publicKey);
   }
 
   static serialize(txIn: TxIn): string {
-    return JSON.stringify(txIn);
+    const publicKey = Crypto.KeyObjectToString(txIn.publicKey, true)
+    const jsonizable = {
+      txOutId: txIn.txOutId,
+      txOutIndex: txIn.txOutIndex,
+      publicKey: publicKey,
+      signature: txIn.signature
+    }
+    const json = JSON.stringify(jsonizable)
+    return json;
   }
 
   static deserialize(json: string): TxIn {
     const data = JSON.parse(json);
-    return new TxIn(data.txOutId, data.txOutIndex, data.signature);
+    const publicKey = Crypto.StringToKeyObject(data.publicKey, true)
+    return new TxIn(data.txOutId, data.txOutIndex, publicKey, data.signature);
   }
 }
 
 export class TxOut {
-  readonly address: KeyObject; // public key
+  readonly address: PublicKeyHash;
   readonly amount: number;
 
-  constructor(address: KeyObject, amount: number) {
+  constructor(address: PublicKeyHash, amount: number) {
     this.address = address;
     this.amount = amount;
   }
 
   static serialize(txOut: TxOut): string {
-    const address = txOut.address.export({
-      type: 'spki',
-      format: 'pem',
-    }) as string;
     return JSON.stringify({
-      address,
+      address: txOut.address,
       amount: txOut.amount,
     });
   }
 
   static deserialize(json: string): TxOut {
     const data = JSON.parse(json);
-    const address = createPublicKey({ key: data.address, format: 'pem' });
-    return new TxOut(address, data.amount);
+    return new TxOut(data.address, data.amount);
   }
 }
 
 export class Transaction {
-  txIns: TxIn[];
-  txOuts: TxOut[];
+  public id: string;
+  public txIns: TxIn[];
+  public txOuts: TxOut[];
 
   constructor(txIns: TxIn[], txOuts: TxOut[]) {
     this.txIns = txIns;
     this.txOuts = txOuts;
+    this.id = this.getId()
   }
 
   getId(): string {
     const txInContent: string = this.txIns
-      .map((txIn: TxIn) => `${txIn.txOutId}${txIn.txOutIndex}`)
+      .map((txIn: TxIn) => `${txIn.txOutId}.${txIn.txOutIndex}.${txIn.signature},`)
       .reduce((a, b) => a + b, '');
 
     const txOutContent: string = this.txOuts
-      .map((txOut: TxOut) => `${txOut.address}${txOut.amount}`)
+      .map((txOut: TxOut) => `${txOut.address}.${txOut.amount},`)
       .reduce((a, b) => a + b, '');
 
-    const plain = `${txInContent}${txOutContent}`;
+    const plain = `${txInContent}_${txOutContent}`;
     return Crypto.hash(plain);
   }
 
@@ -106,6 +141,12 @@ export class Transaction {
     );
     return new Transaction(txIns, txOuts);
   }
+
+  addReward(address: string, reward: number): void {
+    const txOut = new TxOut(address, reward);
+    this.txOuts.push(txOut);
+    this.id = this.getId();
+  }
 }
 
 export class TransPool {
@@ -125,6 +166,10 @@ export class TransPool {
 
   get(): Transaction | null {
     return this.transactions.length > 0 ? this.transactions[0] : null;
+  }
+
+  drop(): void {
+    this.transactions.shift();
   }
 
   removeTrans(block: Block): void {
@@ -202,11 +247,13 @@ export class Blockchain {
   private chain: Block[];
   private difficulty: number;
   private lastBlockTime: number;
+  miningReward: number;
 
-  constructor(difficulty: number) {
+  constructor(difficulty: number, miningReward: number) {
     this.chain = [this.createGenesisBlock()];
     this.difficulty = difficulty;
     this.lastBlockTime = Date.now();
+    this.miningReward = miningReward;
   }
 
   public getAll(): Block[] {
@@ -214,6 +261,10 @@ export class Blockchain {
   }
 
   mine(transactions: Transaction[]): Block {
+    for (const tx of transactions) {
+      this.verifyTransaction(tx);
+    }
+
     const lastBlock = this.chain[this.chain.length - 1];
     const newBlock = new Block(lastBlock.hash, transactions, this.difficulty);
 
@@ -232,24 +283,50 @@ export class Blockchain {
     return this.chain.some((b) => b.hash === block.hash);
   }
 
-  checkBalance(identity: KeyObject): number {
-    let balance = 0;
+  getBalance(address: PublicKeyHash): UnspentResult {
+    const txIdMap = new Map<string, Transaction>();
+    for (const block of this.chain) {
+      for (const tx of block.transactions) {
+        txIdMap.set(tx.getId(), tx);
+      }
+    }
+
+    const utxosSet = new Set<string>();
+
     for (const block of this.chain) {
       for (const tx of block.transactions) {
         for (const txOut of tx.txOuts) {
-          if (txOut.address === identity) {
-            balance += txOut.amount;
+          if (txOut.address === address) {
+            const unspentTxOut = new UTXO(tx.getId(), tx.txOuts.indexOf(txOut), txOut.amount);
+            utxosSet.add(unspentTxOut.stringify());
           }
         }
         for (const txIn of tx.txIns) {
-          const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
-          if (referencedTxOut && referencedTxOut.address === identity) {
-            balance -= referencedTxOut.amount;
+          if (txIn.txOutId === '0' && txIn.txOutIndex === -1) {
+            continue;
+          }
+          const referencedTx = txIdMap.get(txIn.txOutId);
+          if (!referencedTx) {
+            throw new Error(`Referenced transaction not found: ${txIn.txOutId}`);
+          }
+          const referencedTxOut = referencedTx.txOuts[txIn.txOutIndex];
+          if (!referencedTxOut) {
+            throw new Error(`Referenced transaction output not found: ${txIn.txOutIndex}`);
+          }
+          if (referencedTxOut.address === address) {
+            const unspentTxOut = new UTXO(txIn.txOutId, txIn.txOutIndex, referencedTxOut.amount);
+            utxosSet.delete(unspentTxOut.stringify());
           }
         }
       }
     }
-    return balance;
+
+    const utxos = Array.from(utxosSet).map((json) => JSON.parse(json));
+    const unspent: UnspentResult = {
+      balance: utxos.reduce((acc, utxo) => acc + utxo.amount, 0),
+      utxos: utxos
+    }
+    return unspent
   }
 
   getDifficulty(): number {
@@ -259,7 +336,7 @@ export class Blockchain {
   updateDifficulty(): void {
     const currentTime = Date.now();
     const timeTaken = currentTime - this.lastBlockTime;
-    
+
     if (timeTaken < env.MIN_TIMESTAMP_DIFFERENCE_BETWEEN_BLOCKS) {
       this.difficulty++;
     } else if (
@@ -326,25 +403,49 @@ export class Blockchain {
   }
 
   verifyTransaction(transaction: Transaction): void {
+    if (transaction.getId() !== transaction.id) {
+      throw new Error(`Invalid id: ${transaction.id}, expected: ${transaction.getId()}`)
+    }
+
     let totalTxIn = 0;
     let totalTxOut = 0;
 
-    for (const txIn of transaction.txIns) {
-      const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
-      if (!referencedTxOut) {
-        throw new Error(
-          `Invalid transaction input: TxOut not found for TxIn with ID ${txIn.txOutId} at index ${txIn.txOutIndex}`,
-        );
-      }
+    if (transaction.txIns.length === 0) {
+      throw new Error(`Invalid transaction: must have at least one input`)
+    }
 
-      // TODO FIXME Verify signature
-      if (!txIn.verifySignature(referencedTxOut.address)) {
-        throw new Error(
-          `Invalid signature for TxIn referencing TxOut: ${txIn.txOutId} at index ${txIn.txOutIndex}`,
-        );
-      }
+    totalTxIn += this.miningReward;
+    if (transaction.txIns.length === 1 && transaction.txIns[0].txOutId === '0' && transaction.txIns[0].txOutIndex === -1) {
 
-      totalTxIn += referencedTxOut.amount;
+    } else {
+      for (const txIn of transaction.txIns) {
+        const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
+        if (!referencedTxOut) {
+          throw new Error(
+            `Invalid transaction input: TxOut not found for TxIn with ID ${txIn.txOutId} at index ${txIn.txOutIndex}`,
+          );
+        }
+
+        if (!txIn.verifySignature()) {
+          throw new Error(
+            `Invalid signature for TxIn`,
+          );
+        }
+
+        for (const block of this.chain) { // yes yes very efficient kappa
+          for (const tx of block.transactions) {
+            for (const txIn2 of tx.txIns) {
+              if (txIn2.txOutId === txIn.txOutId) {
+                throw new Error(
+                  `Invalid transaction input: TxOut already spent for TxIn with ID ${txIn.txOutId} at index ${txIn.txOutIndex}`,
+                );
+              }
+            }
+          }
+        }
+
+        totalTxIn += referencedTxOut.amount;
+      }
     }
 
     for (const txOut of transaction.txOuts) {
@@ -362,20 +463,40 @@ export class Blockchain {
     return Crypto.hash(JSON.stringify(transaction));
   }
 
-  private findTxOut(txOutId: string, txOutIndex: number): TxOut | null {
+  public findTxOut(txOutId: string, txOutIndex: number): TxOut | null {
+    const txIdMap = new Map<string, Transaction>();
     for (const block of this.chain) {
       for (const tx of block.transactions) {
-        if (txOutId === this.getTransactionId(tx)) {
-          return tx.txOuts[txOutIndex];
-        }
+        txIdMap.set(tx.getId(), tx);
       }
     }
-    return null;
+
+    const referencedTx = txIdMap.get(txOutId);
+    if (!referencedTx) {
+      return null;
+    }
+
+    const referencedTxOut = referencedTx.txOuts[txOutIndex];
+    if (!referencedTxOut) {
+      return null;
+    }
+
+    return referencedTxOut;
   }
 
   private createGenesisBlock(): Block {
     // return new Block('0', [], this.difficulty);
     const serialized = '{"previousHash":"0","timestamp":1731965982450,"transactions":[],"hash":"d5303571b790f83168851382ca17fc67f00aea5b9e66aec99639fd1f32982344","nonce":0}';
     return Block.deserialize(serialized);
+  }
+
+  createCoinbaseTransaction(address: PublicKeyHash): Transaction {
+    const blockHeight = this.chain.length;
+    const coinbaseSignature = blockHeight.toString();
+    const { publicKey } = Asymetric.genKeyPair()
+    const dummyKeyObject = publicKey;
+    const txIn = new TxIn('0', -1, dummyKeyObject, coinbaseSignature);
+    const txOut = new TxOut(address, this.miningReward);
+    return new Transaction([txIn], [txOut]);
   }
 }

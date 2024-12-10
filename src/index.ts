@@ -1,7 +1,7 @@
 import P2PServer from './peer';
 import readline from 'readline';
 import Wallet from './wallet';
-import {Block, Blockchain, Transaction, TransPool, TxIn, TxOut} from './block';
+import { Block, Blockchain, Transaction, TransPool, TxIn, TxOut } from './block';
 import fs from 'fs';
 import { Asymetric } from './util';
 
@@ -38,22 +38,36 @@ const rl = readline.createInterface({
 });
 
 const transPool = new TransPool();
-const blockchain = new Blockchain(2);
+const blockchain = new Blockchain(2, 10);
 const wallet = new Wallet();
 
 peerServer.newBlockCallback = (serializedBlock) => {
     const block = Block.deserialize(serializedBlock);
-    if(!blockchain.hasBlock(block)){
-        blockchain.add(block);
-        peerServer.broadcastNewBlock(serializedBlock);
-        transPool.removeTrans(block);
-        console.log('New block received');
+    if (!blockchain.hasBlock(block)) {
+        try {
+            blockchain.verifyBlockchain()
+            blockchain.add(block);
+            peerServer.broadcastNewBlock(serializedBlock);
+            transPool.removeTrans(block);
+            console.log('New block received');
+        } catch (e) {
+            if (e instanceof Error)
+                console.error(e.message);
+        }
     }
 };
 
 peerServer.newTransactionCallback = (serializedTransaction) => {
     const transaction = Transaction.deserialize(serializedTransaction);
-    if(!transPool.hasTrans(transaction)){ //TODO: check if transaction already in blockchain
+    if (!transPool.hasTrans(transaction)) { //TODO: check if transaction already in blockchain
+        try {
+            blockchain.verifyTransaction(transaction);
+        } catch (e) {
+            if (e instanceof Error)
+                console.error(e.message);
+            return;
+        }
+
         transPool.add(transaction);
         peerServer.broadcastNewTransaction(serializedTransaction);
         console.log('New transaction received');
@@ -89,7 +103,7 @@ rl.on('line', (input) => {
         case 'load': {
             const [filename, password] = args;
             try {
-                wallet.loadFromFile(filename, password);
+                wallet.loadFromFile(filename + ".wallet", password);
                 console.log('loaded');
             } catch (e) {
                 if (e instanceof Error) {
@@ -104,28 +118,41 @@ rl.on('line', (input) => {
             wallet.reset();
             console.log('Wallet reseted');
             break;
+        case 'init':
+            {
+                wallet.create();
+                console.log('Wallet created');
+                break;
+            }
         case 'save': {
             const [filename, password] = args;
             if (!filename || !password) {
                 console.error('Filename and password required');
                 break;
             }
-            wallet.saveToFile(filename, password);
+            wallet.saveToFile(filename + ".wallet", password);
             console.log('saved');
             break;
         }
         case 'create': {
             try {
                 wallet.createIdentity();
+                console.log('Identity created');
             } catch (e) {
                 if (e instanceof Error)
                     console.error(e.message);
             }
-            console.log('Identity created');
             break;
         }
         case 'list':
-            console.log(wallet.getIdentities().map((i) => ({ address: i.address, publicKey: i.keyPair.publicKey })));
+            const balances = wallet.getIdentities().map((identity) => {
+                const { balance } = blockchain.getBalance(identity.address);
+                return { address: identity.address, balance };
+            });
+            console.log('Wallet balances:');
+            for(const balance of balances) {
+                console.log(' ',balance.address, balance.balance);
+            }
             console.warn('Private keys are not shown');
             break;
         case 'peers':
@@ -133,36 +160,82 @@ rl.on('line', (input) => {
             break;
         case 'trans':
             {
-                const [identity, to, amount] = args;
-                if (!identity || !to || !amount) {
+                const [addressFrom, addressTo, amountStr] = args;
+                if (!addressFrom || !addressTo || !amountStr) {
                     console.error('Identity and to and amount required');
                     break;
                 }
-                //TODO: check if wallet loaded
+                const amount = Number(amountStr);
+
+                if (amount <= 0) { // TODO: check in processing new block
+                    console.error('Amount must be positive');
+                    break;
+                }
+
+                const identity = wallet.getIdentities().find((i) => i.address === addressFrom);
+                if (!identity) {
+                    console.error('Src Identity not found');
+                    break;
+                }
+
+                const { privateKey, publicKey } = identity.keyPair;
+                const { balance, utxos } = blockchain.getBalance(addressFrom);
+
+
+                if (balance < amount) {
+                    console.error('Not enough funds');
+                    break;
+                }
+
+                const txIns = utxos.map((utxo) => {
+                    const txIn = new TxIn(utxo.txOutId, utxo.txOutIndex, publicKey, null);
+                    txIn.sign(privateKey);
+                    return txIn;
+                });
+
+                const txOuts = [new TxOut(addressTo, amount)];
+                if (balance > amount) {
+                    const change = balance - amount;
+                    const changeTxOut = new TxOut(addressFrom, change);
+                    txOuts.push(changeTxOut);
+                }
+
+                const transaction = new Transaction(txIns, txOuts);
 
                 try {
-                    const { privateKey, publicKey } = Asymetric.genKeyPair(); //TODO: remove only for testing
-                    const randomId = crypto.randomUUID();
-                    const txIn = new TxIn(randomId, 0, privateKey);
-                    const txOut = new TxOut(publicKey, 100);
-                    const transaction = new Transaction([txIn], [txOut]);
                     transPool.add(transaction);
                     const serializedTransaction = Transaction.serialize(transaction);
                     peerServer.broadcastNewTransaction(serializedTransaction);
+                    console.log('Transaction added to mempool');
                 } catch (e) {
                     if (e instanceof Error)
                         console.error(e.message);
                 }
-                console.log('Transaction added to mempool');
                 break;
             }
         case 'mine':
             {
-                const transaction = transPool.get()
-                if(transaction == null){
+                let transaction = transPool.get()
+                if (transaction === null) {
                     console.log('No transactions in pool');
+                    console.log('Mining for reward...');
+                    if (wallet.getIdentities().length === 0) {
+                        console.error('No identities in wallet');
+                        break;
+                    }
+                    transaction = blockchain.createCoinbaseTransaction(wallet.getIdentities()[0].address);
+                } else {
+                    transaction.addReward(wallet.getIdentities()[0].address, blockchain.miningReward);
+                }
+                try {
+                    blockchain.verifyTransaction(transaction)
+                } catch (e) {
+                    if (e instanceof Error)
+                        console.error(e.message);
+                    transPool.drop();
                     break;
                 }
+
                 console.log('Mining in progress...');
                 const block = blockchain.mine([transaction]);
                 console.log('Mined block', block);
@@ -176,6 +249,51 @@ rl.on('line', (input) => {
         case 'chain':
             console.log(blockchain.getAll());
             break;
+        case 'balance':
+            {
+                const [address] = args;
+                if (!address) {
+                    // list all wallet balances without utxos
+                    const balances = wallet.getIdentities().map((identity) => {
+                        const { balance } = blockchain.getBalance(identity.address);
+                        return { address: identity.address, balance };
+                    });
+                    console.log('Wallet balances:');
+                    for(const balance of balances) {
+                        console.log(' ',balance.address, balance.balance);
+                    }
+                    break;
+                }
+                const { balance, utxos } = blockchain.getBalance(address);
+                console.log('Balance:', balance);
+                console.log('UTXOs:');
+                for (const utxo of utxos) {
+                    console.log(' ', utxo.txOutId + ':' + utxo.txOutIndex, utxo.amount);
+                }
+                break;
+            }
+        case 'money': { 
+            const transactions = blockchain.getAll().map((block) => block.transactions).flat();
+            for (const transaction of transactions) {
+                console.log('TXID:', transaction.id);
+                for (const txIn of transaction.txIns) { 
+                    if (txIn.txOutId === '0') {
+                        console.log('Coinbase transaction');
+                    } else {
+                        const txOut = blockchain.findTxOut(txIn.txOutId, txIn.txOutIndex);
+                        if (txOut) {
+                            console.log('TxIn:', txOut.address, txOut.amount, txIn.txOutId + ":" + txIn.txOutIndex);
+                        }
+                    }
+                }
+                for (const txOut of transaction.txOuts) {
+                    console.log('TxOut:', txOut.address, txOut.amount);
+                }
+                console.log(' ');
+            }
+
+            break;
+        }
         case 'help':
             console.log('Available commands:');
             console.log('debug - Toggle debug mode');
@@ -183,20 +301,28 @@ rl.on('line', (input) => {
             console.log('dir - List wallet files');
             console.log('load <filename> <password> - Load wallet from file');
             console.log('reset - Reset wallet');
-            console.log('save <filename> <password> - Save wallet to file');
+            console.log('save <filename> <password> - Save wallet to file (creates new if not exists)');
+            console.log('init - Create new wallet');
             console.log('create - Create new identity and saves to wallet');
             console.log('list - List identities');
             console.log('peers - List connected peers');
             console.log('trans <identity> <to> <amount> - Add new transation');
-            console.log('mine - Starts mining first transaction in mempool');
+            console.log('mine - Starts mining first transaction in mempool or coinbase transaction');
             console.log('pool - Prints transaction pool');
             console.log('chain - Prints blockchain');
+            console.log('money - Prints all transactions');
             console.log('exit - Exit program');
+            console.log('help - Show this help');
+            console.log(' ');
+            console.log('INITIAL SETUP:');
+            console.log('init');
+            console.log('create');
             break;
         default:
             console.warn('Unknown command');
             break;
     }
+    console.log(' ');
 
     if (input === 'exit') {
         rl.close();

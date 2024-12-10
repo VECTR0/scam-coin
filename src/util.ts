@@ -2,6 +2,8 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createPrivateKey,
+  createPublicKey,
   createSign,
   createVerify,
   generateKeyPairSync,
@@ -24,7 +26,7 @@ export type KeyPair = {
 export class Asymetric {
   // Asymetric: https://asecuritysite.com/node/node_signec
 
-  static genKeyPair() {
+  static genKeyPair(): KeyPair {
     const { privateKey, publicKey } = generateKeyPairSync('ec', {
       namedCurve: 'sect233k1',
     });
@@ -77,6 +79,19 @@ export class AES {
 export class Crypto {
   static hash(plain: string): string {
     return createHash('sha256').update(plain).digest('hex');
+  }
+
+  static KeyObjectToString(key: KeyObject, isPublic: boolean): string {
+    const type = isPublic ? 'spki' : 'pkcs8';
+
+    return key.export({
+      type: type,
+      format: 'pem',
+    }) as string;
+  }
+
+  static StringToKeyObject(str: string, isPublic: boolean): KeyObject {
+    return isPublic ? createPublicKey(str) : createPrivateKey(str);
   }
 
   static getAddressesFromPublicKey(publicKey: KeyObject): string {
