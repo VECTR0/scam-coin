@@ -16,15 +16,15 @@ class UTXO {
   }
 
   stringify(): string {
-    const json = JSON.stringify(this)
-    return json
+    const json = JSON.stringify(this);
+    return json;
   }
 }
 
 type UnspentResult = {
-  balance: number,
-  utxos: UTXO[]
-}
+  balance: number;
+  utxos: UTXO[];
+};
 
 export class TxIn {
   readonly txOutId: string;
@@ -40,8 +40,8 @@ export class TxIn {
   ) {
     this.txOutId = txOutId;
     this.txOutIndex = txOutIndex;
-    this.publicKey = publicKey
-    this.signature = signature
+    this.publicKey = publicKey;
+    this.signature = signature;
   }
 
   getData(): string {
@@ -60,20 +60,20 @@ export class TxIn {
   }
 
   static serialize(txIn: TxIn): string {
-    const publicKey = Crypto.KeyObjectToString(txIn.publicKey, true)
+    const publicKey = Crypto.KeyObjectToString(txIn.publicKey, true);
     const jsonizable = {
       txOutId: txIn.txOutId,
       txOutIndex: txIn.txOutIndex,
       publicKey: publicKey,
-      signature: txIn.signature
-    }
-    const json = JSON.stringify(jsonizable)
+      signature: txIn.signature,
+    };
+    const json = JSON.stringify(jsonizable);
     return json;
   }
 
   static deserialize(json: string): TxIn {
     const data = JSON.parse(json);
-    const publicKey = Crypto.StringToKeyObject(data.publicKey, true)
+    const publicKey = Crypto.StringToKeyObject(data.publicKey, true);
     return new TxIn(data.txOutId, data.txOutIndex, publicKey, data.signature);
   }
 }
@@ -108,12 +108,14 @@ export class Transaction {
   constructor(txIns: TxIn[], txOuts: TxOut[]) {
     this.txIns = txIns;
     this.txOuts = txOuts;
-    this.id = this.getId()
+    this.id = this.getId();
   }
 
   getId(): string {
     const txInContent: string = this.txIns
-      .map((txIn: TxIn) => `${txIn.txOutId}.${txIn.txOutIndex}.${txIn.signature},`)
+      .map(
+        (txIn: TxIn) => `${txIn.txOutId}.${txIn.txOutIndex}.${txIn.signature},`,
+      )
       .reduce((a, b) => a + b, '');
 
     const txOutContent: string = this.txOuts
@@ -260,6 +262,10 @@ export class Blockchain {
     return this.chain;
   }
 
+  public getLatestBlock(): Block {
+    return this.chain[this.chain.length - 1];
+  }
+
   mine(transactions: Transaction[]): Block {
     for (const tx of transactions) {
       this.verifyTransaction(tx);
@@ -297,7 +303,11 @@ export class Blockchain {
       for (const tx of block.transactions) {
         for (const txOut of tx.txOuts) {
           if (txOut.address === address) {
-            const unspentTxOut = new UTXO(tx.getId(), tx.txOuts.indexOf(txOut), txOut.amount);
+            const unspentTxOut = new UTXO(
+              tx.getId(),
+              tx.txOuts.indexOf(txOut),
+              txOut.amount,
+            );
             utxosSet.add(unspentTxOut.stringify());
           }
         }
@@ -307,14 +317,22 @@ export class Blockchain {
           }
           const referencedTx = txIdMap.get(txIn.txOutId);
           if (!referencedTx) {
-            throw new Error(`Referenced transaction not found: ${txIn.txOutId}`);
+            throw new Error(
+              `Referenced transaction not found: ${txIn.txOutId}`,
+            );
           }
           const referencedTxOut = referencedTx.txOuts[txIn.txOutIndex];
           if (!referencedTxOut) {
-            throw new Error(`Referenced transaction output not found: ${txIn.txOutIndex}`);
+            throw new Error(
+              `Referenced transaction output not found: ${txIn.txOutIndex}`,
+            );
           }
           if (referencedTxOut.address === address) {
-            const unspentTxOut = new UTXO(txIn.txOutId, txIn.txOutIndex, referencedTxOut.amount);
+            const unspentTxOut = new UTXO(
+              txIn.txOutId,
+              txIn.txOutIndex,
+              referencedTxOut.amount,
+            );
             utxosSet.delete(unspentTxOut.stringify());
           }
         }
@@ -324,9 +342,9 @@ export class Blockchain {
     const utxos = Array.from(utxosSet).map((json) => JSON.parse(json));
     const unspent: UnspentResult = {
       balance: utxos.reduce((acc, utxo) => acc + utxo.amount, 0),
-      utxos: utxos
-    }
-    return unspent
+      utxos: utxos,
+    };
+    return unspent;
   }
 
   getDifficulty(): number {
@@ -404,19 +422,24 @@ export class Blockchain {
 
   verifyTransaction(transaction: Transaction): void {
     if (transaction.getId() !== transaction.id) {
-      throw new Error(`Invalid id: ${transaction.id}, expected: ${transaction.getId()}`)
+      throw new Error(
+        `Invalid id: ${transaction.id}, expected: ${transaction.getId()}`,
+      );
     }
 
     let totalTxIn = 0;
     let totalTxOut = 0;
 
     if (transaction.txIns.length === 0) {
-      throw new Error(`Invalid transaction: must have at least one input`)
+      throw new Error(`Invalid transaction: must have at least one input`);
     }
 
     totalTxIn += this.miningReward;
-    if (transaction.txIns.length === 1 && transaction.txIns[0].txOutId === '0' && transaction.txIns[0].txOutIndex === -1) {
-
+    if (
+      transaction.txIns.length === 1 &&
+      transaction.txIns[0].txOutId === '0' &&
+      transaction.txIns[0].txOutIndex === -1
+    ) {
     } else {
       for (const txIn of transaction.txIns) {
         const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
@@ -427,12 +450,11 @@ export class Blockchain {
         }
 
         if (!txIn.verifySignature()) {
-          throw new Error(
-            `Invalid signature for TxIn`,
-          );
+          throw new Error(`Invalid signature for TxIn`);
         }
 
-        for (const block of this.chain) { // yes yes very efficient kappa
+        for (const block of this.chain) {
+          // yes yes very efficient kappa
           for (const tx of block.transactions) {
             for (const txIn2 of tx.txIns) {
               if (txIn2.txOutId === txIn.txOutId) {
@@ -486,14 +508,15 @@ export class Blockchain {
 
   private createGenesisBlock(): Block {
     // return new Block('0', [], this.difficulty);
-    const serialized = '{"previousHash":"0","timestamp":1731965982450,"transactions":[],"hash":"d5303571b790f83168851382ca17fc67f00aea5b9e66aec99639fd1f32982344","nonce":0}';
+    const serialized =
+      '{"previousHash":"0","timestamp":1731965982450,"transactions":[],"hash":"d5303571b790f83168851382ca17fc67f00aea5b9e66aec99639fd1f32982344","nonce":0}';
     return Block.deserialize(serialized);
   }
 
   createCoinbaseTransaction(address: PublicKeyHash): Transaction {
     const blockHeight = this.chain.length;
     const coinbaseSignature = blockHeight.toString();
-    const { publicKey } = Asymetric.genKeyPair()
+    const { publicKey } = Asymetric.genKeyPair();
     const dummyKeyObject = publicKey;
     const txIn = new TxIn('0', -1, dummyKeyObject, coinbaseSignature);
     const txOut = new TxOut(address, this.miningReward);
