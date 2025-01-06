@@ -1,214 +1,235 @@
-// import { strict as assert } from 'node:assert';
-// import { beforeEach, describe, it } from 'node:test';
-// import {
-//   Blockchain,
-//   Transaction,
-//   TxIn,
-//   TxOut,
-//   TransPool,
-//   Block,
-// } from '../src/block';
-// import { Asymetric } from '../src/util';
-// import { KeyObject } from 'node:crypto';
+import { describe, it } from 'node:test';
 
-// // const { privateKey: privateKey2, publicKey: publicKey2 } =
-// //   Asymetric.genKeyPair();
+import assert from 'assert';
+import { Block, Blockchain, OrphanBlocks } from '../src/block';
 
-// describe('Blockchain Tests', () => {
-//   let blockchain: Blockchain;
-//   let transPool: TransPool;
-//   let privateKey: KeyObject;
-//   let publicKey: KeyObject;
+// Test Block class
+describe('Block Class', () => {
+  it('should calculate hash correctly', () => {
+    const block = new Block('0', [], 1);
+    const expectedHash = block.calculateHash();
+    assert.strictEqual(
+      block.hash,
+      expectedHash,
+      'Hash does not match calculated hash',
+    );
+  });
 
-//   beforeEach(() => {
-//     blockchain = new Blockchain(2);
-//     transPool = new TransPool();
-//     const { privateKey: sc, publicKey: pk } = Asymetric.genKeyPair();
-//     privateKey = sc;
-//     publicKey = pk;
-//   });
+  it('should serialize and deserialize correctly', () => {
+    const block = new Block('0', [], 1);
+    const serialized = Block.serialize(block);
+    const deserialized = Block.deserialize(serialized);
+    assert.strictEqual(
+      deserialized.previousHash,
+      block.previousHash,
+      'Deserialized previousHash does not match',
+    );
+    assert.deepStrictEqual(
+      deserialized.transactions,
+      block.transactions,
+      'Deserialized transactions do not match',
+    );
+    assert.strictEqual(
+      deserialized.difficulty,
+      block.difficulty,
+      'Deserialized difficulty does not match',
+    );
+  });
 
-//   it('should create a genesis block', () => {
-//     const genesisBlock = blockchain['chain'][0];
-//     assert.equal(genesisBlock.previousHash, '0');
-//     assert.deepEqual(genesisBlock.transactions, []);
-//   });
+  it('should verify the block hash', () => {
+    const block = new Block('0', [], 1);
+    assert.strictEqual(block.verify(), true, 'Block verification failed');
+  });
 
-//   //
-//   // it('should create and verify a transaction', () => {
-//   //   const txOut = new TxOut(publicKey, 50);
-//   //   const txIn = new TxIn('dummyTxOutId', 0, privateKey);
-//   //   const transaction = new Transaction([txIn], [txOut]);
+  it('should fail verification if hash is tampered', () => {
+    const block = new Block('0', [], 1);
+    block.hash = 'tampered_hash';
+    assert.strictEqual(
+      block.verify(),
+      false,
+      'Tampered block should fail verification',
+    );
+  });
+});
 
-//   //   transPool.add(transaction);
-//   //   console.log('trans:\n', transPool);
-//   //   console.log('txin:\n', transaction.getId());
-//   //   console.log('trans:\n', blockchain.verifyTransaction(transaction));
-//   //   assert.equal(transPool.getAll().length, 1);
+// Test OrphanBlocks class
+describe('OrphanBlocks Class', () => {
+  it('should add orphan blocks correctly', () => {
+    const orphanBlocks = new OrphanBlocks(60000);
+    const block = new Block('1', [], 1);
+    orphanBlocks.add(block);
+    const retrievedBlock = orphanBlocks.getBlock([], block.hash);
+    assert.strictEqual(
+      retrievedBlock,
+      block,
+      'Orphan block not added correctly',
+    );
+  });
 
-//   //   assert.doesNotThrow(() => blockchain['verifyTransaction'](transaction));
-//   // });
+  it('should calculate the possible blockchain length correctly', () => {
+    const orphanBlocks = new OrphanBlocks(60000);
+    const genesisBlock = new Block('0', [], 1);
+    const block = new Block(genesisBlock.hash, [], 1);
+    orphanBlocks.add(block);
+    const length = orphanBlocks.getPossibleBlockChainLength(
+      [genesisBlock],
+      block,
+    );
+    assert.strictEqual(length, 2, 'Possible blockchain length is incorrect');
+  });
 
-//   it('should mine a valid block and add it to the chain', () => {
-//     const initialLength = blockchain['chain'].length;
+  it('should cleanup expired blocks', () => {
+    const orphanBlocks = new OrphanBlocks(1); // 1 ms TTL
+    const block = new Block('1', [], 1);
+    orphanBlocks.add(block);
 
-//     const txIn = new TxIn('previousTxId', 0, privateKey);
-//     const txOut1 = new TxOut(publicKey, 100);
-//     const txOut2 = new TxOut(publicKey, 50);
-//     const transaction = new Transaction([txIn], [txOut1, txOut2]);
+    setTimeout(() => {
+      orphanBlocks.cleanup();
+      const retrievedBlock = orphanBlocks.getBlock([], block.hash);
+      assert.strictEqual(
+        retrievedBlock,
+        undefined,
+        'Expired block not cleaned up',
+      );
+    }, 10);
+  });
+});
 
-//     const minedBlock = blockchain.mine([transaction]);
+// Test Blockchain class
+describe('Blockchain Class', () => {
+  const dummyDiff = 1;
+  const dummyTx = [];
 
-//     // Validate chain length.
-//     assert.strictEqual(blockchain['chain'].length, initialLength + 1);
+  it('should initialize with a genesis block', () => {
+    const blockchain = new Blockchain(1, 50);
+    const genesisBlock = blockchain.getAll()[0];
+    assert.strictEqual(
+      genesisBlock.previousHash,
+      '0',
+      'Genesis block has incorrect previous hash',
+    );
+  });
 
-//     // Validate that the new block has the correct previous hash.
-//     assert.strictEqual(
-//       minedBlock.previousHash,
-//       blockchain['chain'][initialLength - 1].hash,
-//     );
+  it('should mine a new block', () => {
+    const blockchain = new Blockchain(1, 50);
+    const newBlock = blockchain.mine([]);
+    assert.strictEqual(
+      blockchain.getLatestBlock(),
+      newBlock,
+      'Mined block is not the latest block',
+    );
+  });
 
-//     const diff = minedBlock.difficulty;
-//     assert.strictEqual(minedBlock.hash.substring(0, diff), '0'.repeat(diff));
+  it('should verify the blockchain', () => {
+    const blockchain = new Blockchain(1, 50);
+    blockchain.mine([]);
+    assert.doesNotThrow(
+      () => blockchain.verifyBlockchain(),
+      'Blockchain verification failed',
+    );
+  });
 
-//     // Validate transactions are correctly included.
-//     assert.deepStrictEqual(minedBlock.transactions, [transaction]);
-//   });
+  it('should reject invalid blocks', () => {
+    const blockchain = new Blockchain(1, 50);
+    const block = blockchain.getLatestBlock();
+    block.hash = 'tampered_hash';
+    assert.throws(
+      () => blockchain.add(block),
+      /Invalid block/,
+      'Tampered block should not be accepted',
+    );
+  });
 
-//   it('should mine a block with transactions', () => {
-//     const txOut = new TxOut(publicKey, 50);
-//     const txIn = new TxIn('dummyTxOutId', 0, privateKey);
-//     const transaction = new Transaction([txIn], [txOut]);
+  it('should calculate balance correctly', () => {
+    const blockchain = new Blockchain(1, 50);
+    const address = 'test_address';
+    blockchain.createCoinbaseTransaction(address);
+    const balance = blockchain.getBalance(address);
+    assert(balance.balance >= 0, 'Balance calculation is incorrect');
+  });
 
-//     transPool.add(transaction);
-//     const minedBlock = blockchain.mine(transPool.getAll());
+  it('should add orphan block', () => {
+    const blockchain = new Blockchain(2, 50);
+    const chain = blockchain.getChain();
+    const genesisBlock = chain[0] as Block;
+    const firstBlock = new Block(genesisBlock.hash, dummyTx, dummyDiff);
+    const secondBlock = new Block(firstBlock.hash, dummyTx, dummyDiff);
+    const thirdBlock = new Block(secondBlock.hash, dummyTx, dummyDiff);
+    const fourthBlock = new Block(thirdBlock.hash, dummyTx, dummyDiff);
 
-//     assert.equal(minedBlock.transactions.length, 1);
-//     assert.equal(minedBlock.transactions[0].txOuts[0].address, publicKey);
-//   });
+    blockchain.add(firstBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 0);
 
-//   //   it('should verify blockchain integrity', () => {
-//   //     const txOut = new TxOut(publicKey, 50);
-//   //     const txIn = new TxIn('dummyTxOutId', 0, privateKey);
-//   //     const transaction = new Transaction([txIn], [txOut]);
+    blockchain.add(thirdBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 1);
 
-//   //     transPool.add(transaction);
-//   //     blockchain.mine(transPool.getAll());
+    blockchain.add(fourthBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 2);
 
-//   //     assert.doesNotThrow(() => blockchain.verifyBlockchain());
-//   //   });
+    blockchain.add(secondBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 0);
 
-//   it('should throw error for invalid transactions', () => {
-//     const invalidTxIn = new TxIn('invalidTxOutId', 0, privateKey);
-//     const txOut = new TxOut(publicKey, 50);
-//     const transaction = new Transaction([invalidTxIn], [txOut]);
+    assert.strictEqual(blockchain.getSize(), 5);
 
-//     assert.throws(() => blockchain['verifyTransaction'](transaction), {
-//       message: /Invalid transaction input: TxOut not found/,
-//     });
-//   });
+    assert.strictEqual(chain[0].hash, genesisBlock.hash);
+    assert.strictEqual(chain[1].hash, firstBlock.hash);
+    assert.strictEqual(chain[2].hash, secondBlock.hash);
+    assert.strictEqual(chain[3].hash, thirdBlock.hash);
+    assert.strictEqual(chain[4].hash, fourthBlock.hash);
+  });
 
-//   //   it('should check the balance of an address', () => {
-//   //     const txOut1 = new TxOut(publicKey, 50);
-//   //     const txIn1 = new TxIn('dummyTxOutId', 0, privateKey);
-//   //     const transaction1 = new Transaction([txIn1], [txOut1]);
+  it('should handle fork properly', () => {
+    const blockchain = new Blockchain(2, 50);
+    const chain = blockchain.getChain();
+    const genesisBlock = chain[0] as Block;
 
-//   //     const txOut2 = new TxOut(publicKey, 30);
-//   //     const txIn2 = new TxIn('dummyTxOutId', 0, privateKey);
-//   //     const transaction2 = new Transaction([txIn2], [txOut2]);
+    const firstBlock = new Block(genesisBlock.hash, dummyTx, dummyDiff);
+    const secondBlock = new Block(firstBlock.hash, dummyTx, dummyDiff);
+    const thirdBlock = new Block(secondBlock.hash, dummyTx, dummyDiff);
+    for (let i = 0; i < 1e6; i++) {
+      // force differet hash (by modifying timestamp)
+      i++;
+      i--;
+    }
+    const ABlock = new Block(secondBlock.hash, dummyTx, dummyDiff);
+    const BBlock = new Block(ABlock.hash, dummyTx, dummyDiff);
 
-//   //     transPool.add(transaction1);
-//   //     blockchain.mine(transPool.getAll());
+    blockchain.add(firstBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 0);
 
-//   //     transPool.add(transaction2);
-//   //     blockchain.mine(transPool.getAll());
+    blockchain.add(secondBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 0);
 
-//   //     const balance = blockchain.checkBalance(publicKey);
-//   //     assert.equal(balance, 80); // 50 + 30
-//   //   });
+    blockchain.add(thirdBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 0);
 
-//   //   it('should update difficulty based on block timing', () => {
-//   //     setTimeout(() => {
-//   //       const txOut = new TxOut(publicKey, 50);
-//   //       const txIn = new TxIn('dummyTxOutId', 0, privateKey);
-//   //       const transaction = new Transaction([txIn], [txOut]);
+    blockchain.add(ABlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 1);
 
-//   //       transPool.add(transaction);
-//   //       blockchain.mine(transPool.getAll());
+    const secondOrphan1 = blockchain
+      .getOrphanBlocks()
+      .getMap()
+      .get(secondBlock.hash);
 
-//   //       assert.equal(blockchain.getDifficulty(), 4);
+    assert.ok(secondOrphan1 !== undefined);
+    assert.equal(secondOrphan1[0].hash, ABlock.hash);
 
-//   //       for (let i = 0; i < 5; i++) {
-//   //         blockchain.mine(transPool.getAll());
-//   //       }
+    blockchain.add(BBlock);
+    assert.strictEqual(blockchain.getOrphanBlocks().getMap().size, 1);
 
-//   //       assert.equal(blockchain.getDifficulty(), 3);
-//   //     }, 1500);
-//   //   });
+    const secondOrphan2 = blockchain
+      .getOrphanBlocks()
+      .getMap()
+      .get(secondBlock.hash);
 
-//   describe('Transaction Serialization and Deserialization', () => {
-//     it('should correctly serialize and deserialize a TxIn', () => {
-//       const txIn = new TxIn('prevTxId', 0, privateKey);
-//       const serialized = TxIn.serialize(txIn);
-//       const deserialized = TxIn.deserialize(serialized);
+    assert.ok(secondOrphan2 !== undefined);
+    assert.equal(secondOrphan2[0].hash, thirdBlock.hash);
 
-//       assert.strictEqual(deserialized.txOutId, txIn.txOutId);
-//       assert.strictEqual(deserialized.txOutIndex, txIn.txOutIndex);
-//       assert.strictEqual(deserialized.signature, txIn.signature);
-//     });
-
-//     it('should correctly serialize and deserialize a TxOut', () => {
-//       const txOut = new TxOut(publicKey, 100);
-//       const serialized = TxOut.serialize(txOut);
-//       const deserialized = TxOut.deserialize(serialized);
-
-//       assert.strictEqual(deserialized.amount, txOut.amount);
-//       assert.strictEqual(
-//         deserialized.address.export({ type: 'spki', format: 'pem' }),
-//         publicKey.export({ type: 'spki', format: 'pem' }),
-//       );
-//     });
-
-//     it('should correctly serialize and deserialize a Transaction', () => {
-//       const txIn = new TxIn('prevTxId', 0, privateKey);
-//       const txOut = new TxOut(publicKey, 100);
-//       const transaction = new Transaction([txIn], [txOut]);
-
-//       const serialized = Transaction.serialize(transaction);
-//       const deserialized = Transaction.deserialize(serialized);
-
-//       assert.strictEqual(deserialized.txIns.length, 1);
-//       assert.strictEqual(deserialized.txOuts.length, 1);
-//       assert.strictEqual(deserialized.txIns[0].txOutId, txIn.txOutId);
-//       assert.strictEqual(deserialized.txOuts[0].amount, txOut.amount);
-//       assert.strictEqual(
-//         deserialized.txOuts[0].address.export({ type: 'spki', format: 'pem' }),
-//         publicKey.export({ type: 'spki', format: 'pem' }),
-//       );
-//     });
-//   });
-
-//   describe('Block Serialization and Deserialization with Transactions', () => {
-//     it('should correctly serialize and deserialize a Block with Transactions', () => {
-//       const txIn = new TxIn('prevTxId', 0, privateKey);
-//       const txOut = new TxOut(publicKey, 100);
-//       const transaction = new Transaction([txIn], [txOut]);
-
-//       const block = new Block('0', [transaction], 3);
-//       const serialized = Block.serialize(block);
-//       const deserializedBlock = Block.deserialize(serialized);
-
-//       assert.strictEqual(deserializedBlock.previousHash, block.previousHash);
-//       assert.strictEqual(deserializedBlock.difficulty, block.difficulty);
-//       assert.strictEqual(deserializedBlock.transactions.length, 1);
-//       assert.strictEqual(
-//         deserializedBlock.transactions[0].txIns[0].txOutId,
-//         transaction.txIns[0].txOutId,
-//       );
-//       assert.strictEqual(
-//         deserializedBlock.transactions[0].txOuts[0].amount,
-//         100,
-//       );
-//     });
-//   });
-// });
+    assert.strictEqual(chain[0].hash, genesisBlock.hash);
+    assert.strictEqual(chain[1].hash, firstBlock.hash);
+    assert.strictEqual(chain[2].hash, secondBlock.hash);
+    // assert.strictEqual(chain[3].hash, thirdBlock.hash);
+    assert.strictEqual(chain[3].hash, ABlock.hash);
+    assert.strictEqual(chain[4].hash, BBlock.hash);
+  });
+});

@@ -1,4 +1,4 @@
-import { createPublicKey, KeyObject } from 'crypto';
+import { KeyObject } from 'crypto';
 import { Asymetric, Crypto } from './util';
 import { env } from './config';
 
@@ -202,8 +202,8 @@ export class Block {
     this.timestamp = Date.now();
     this.transactions = transactions;
     this.difficulty = difficulty;
-    this.hash = this.calculateHash();
     this.nonce = 0;
+    this.hash = this.calculateHash();
   }
 
   calculateHash(): string {
@@ -245,8 +245,140 @@ export class Block {
   }
 }
 
+export class OrphanBlocks {
+  private orphanBlocks = new Map<string, Block[]>();
+  constructor(private timeToLive: number) {}
+
+  getMap(): Map<string, Block[]> {
+    return this.orphanBlocks;
+  }
+
+  add(block: Block) {
+    if (this.orphanBlocks.has(block.previousHash)) {
+      const blocks = this.orphanBlocks.get(block.previousHash);
+      if (blocks) {
+        if (blocks.some((b) => b.hash === block.hash)) {
+          return;
+        }
+        blocks.push(block);
+        this.orphanBlocks.set(block.previousHash, blocks);
+      }
+      return;
+    }
+    this.orphanBlocks.set(block.previousHash, [block]);
+  }
+
+  getBlock(blockchain: Block[], hash: string): Block | undefined {
+    for (const block of blockchain) {
+      if (block.hash === hash) {
+        return block;
+      }
+    }
+
+    for (const [, blocks] of this.orphanBlocks) {
+      for (const block of blocks) {
+        if (block.hash === hash) {
+          return block;
+        }
+      }
+    }
+  }
+
+  getPossibleBlockChainLength(blockchain: Block[], block: Block): number {
+    let currentBlock = block;
+    let length = 1;
+
+    while (currentBlock.previousHash !== '0') {
+      const previousBlock = this.getBlock(
+        blockchain,
+        currentBlock.previousHash,
+      );
+      if (!previousBlock) {
+        return -1;
+      }
+      length++;
+      currentBlock = previousBlock;
+    }
+    return length;
+  }
+
+  private getMaxPathBlock(blockchain: Block[]): Block {
+    type Item = { block: Block; chainLength: number };
+    const chainLengths = new Array<Item>();
+
+    const chainLength = blockchain.length;
+    chainLengths.push({ block: blockchain[chainLength - 1], chainLength });
+
+    for (const [, blocks] of this.orphanBlocks) {
+      for (const block of blocks) {
+        const length = this.getPossibleBlockChainLength(blockchain, block);
+        if (length === -1) {
+          continue;
+        }
+        chainLengths.push({ block, chainLength: length });
+      }
+    }
+
+    chainLengths.sort((a, b) => b.chainLength - a.chainLength);
+    return chainLengths[0].block;
+  }
+
+  private getBlockPath(blockchain: Block[], block: Block): Block[] {
+    const path = new Array<Block>();
+    let currentBlock = block;
+
+    while (currentBlock.previousHash !== '0') {
+      path.push(currentBlock);
+      const previousBlock = this.getBlock(
+        blockchain,
+        currentBlock.previousHash,
+      );
+      if (!previousBlock) {
+        break;
+      }
+      currentBlock = previousBlock;
+    }
+    path.push(currentBlock);
+    path.reverse();
+    return path;
+  }
+
+  getLongestChain(blockchain: Block[]): Block[] {
+    this.cleanup();
+    const maxPathBlock = this.getMaxPathBlock(blockchain);
+    if (maxPathBlock.hash === blockchain[blockchain.length - 1].hash) {
+      return blockchain;
+    }
+    return this.getBlockPath(blockchain, maxPathBlock);
+  }
+
+  deleteBlock(block: Block) {
+    for (const [hash, blocks] of this.orphanBlocks) {
+      const filteredBlocks = blocks.filter((b) => b.hash !== block.hash);
+      this.orphanBlocks.set(hash, filteredBlocks);
+    }
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [hash, blocks] of this.orphanBlocks) {
+      const filteredBlocks = blocks.filter(
+        (b) => now - b.timestamp < this.timeToLive,
+      );
+      this.orphanBlocks.set(hash, filteredBlocks);
+    }
+
+    for (const [hash, blocks] of this.orphanBlocks) {
+      if (blocks.length === 0) {
+        this.orphanBlocks.delete(hash);
+      }
+    }
+  }
+}
+
 export class Blockchain {
   private chain: Block[];
+  private orphanBlocks = new OrphanBlocks(60_000); // 60 seconds
   private difficulty: number;
   private lastBlockTime: number;
   miningReward: number;
@@ -256,6 +388,18 @@ export class Blockchain {
     this.difficulty = difficulty;
     this.lastBlockTime = Date.now();
     this.miningReward = miningReward;
+  }
+
+  public getOrphanBlocks(): OrphanBlocks {
+    return this.orphanBlocks;
+  }
+
+  public getSize(): number {
+    return this.chain.length;
+  }
+
+  public getChain(): Block[] {
+    return this.chain;
   }
 
   public getAll(): Block[] {
@@ -406,18 +550,60 @@ export class Blockchain {
 
   public add(block: Block): void {
     const lastBlock = this.chain[this.chain.length - 1];
-
-    if (block.previousHash !== lastBlock.hash) {
-      throw new Error('Invalid block: incorrect previous hash.');
-    }
-
     if (!block.verify()) {
       throw new Error('Invalid block: verification failed.');
     }
 
-    this.chain.push(block);
-    this.updateDifficulty();
-    this.lastBlockTime = Date.now();
+    if (block.previousHash === lastBlock.hash) {
+      // console.log(block.hash, 'added to chain');
+      this.chain.push(block);
+      this.updateDifficulty();
+      this.lastBlockTime = Date.now();
+    } else {
+      // console.log(block.hash, 'added to orphans');
+      this.orphanBlocks.add(block);
+    }
+
+    const maxChain = this.orphanBlocks.getLongestChain(this.chain);
+    // console.log(
+    //   'maxChain',
+    //   maxChain.map((b) => b.hash.substring(0, 5)),
+    // );
+    const currentChainLongest =
+      maxChain[maxChain.length - 1].hash ===
+      this.chain[this.chain.length - 1].hash;
+
+    if (currentChainLongest) {
+      this.orphanBlocks.cleanup();
+      return;
+    }
+    // console.log('chora funkcja');
+    for (const block of maxChain) {
+      this.orphanBlocks.deleteBlock(block);
+    }
+    for (const block of this.chain) {
+      let maxChainIncludesBlock = false;
+      for (const b of maxChain) {
+        if (b.hash === block.hash) {
+          maxChainIncludesBlock = true;
+          break;
+        }
+      }
+      if (!maxChainIncludesBlock) {
+        this.orphanBlocks.add(block);
+      }
+    }
+    this.orphanBlocks.cleanup();
+    this.chain.length = 0;
+    for (const block of maxChain) {
+      this.chain.push(block);
+    }
+    // const m = this.orphanBlocks.getMap();
+    // const arr = Array.from(m.entries()).map((x) => {
+    //   const [hash, blocks] = x;
+    //   return [hash.substring(0, 5), blocks.map((b) => b.hash.substring(0, 5))];
+    // });
+    // console.log('orphanBlocks', arr); // SHOW TESTING PURPOSES
   }
 
   verifyTransaction(transaction: Transaction): void {
@@ -440,6 +626,7 @@ export class Blockchain {
       transaction.txIns[0].txOutId === '0' &&
       transaction.txIns[0].txOutIndex === -1
     ) {
+      //
     } else {
       for (const txIn of transaction.txIns) {
         const referencedTxOut = this.findTxOut(txIn.txOutId, txIn.txOutIndex);
