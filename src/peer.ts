@@ -1,6 +1,6 @@
 import { createServer, Socket, connect, Server, AddressInfo } from 'net';
 
-enum PacketType {
+export enum PacketType {
   CONNECT = 0x01,
   GET_NEIGHBORS = 0x02,
   HEARTBEAT = 0x03,
@@ -10,13 +10,13 @@ enum PacketType {
   GET_BLOCKCHAIN = 0x07,
 }
 
-enum PacketFlag {
+export enum PacketFlag {
   NONE = 0x00,
   REQUEST = 0x01,
   RESPONSE = 0x02,
 }
 
-type Packet = {
+export type Packet = {
   type: PacketType;
   flag: PacketFlag;
   json: string;
@@ -27,7 +27,7 @@ type PacketJsonStringify = {
   address: string;
 };
 
-type Neighbor = {
+export type Neighbor = {
   address: string;
   listeningAddress?: string;
   lastHeartbeat: number;
@@ -56,8 +56,8 @@ class P2PServer {
     this.name =
       Date.now().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
-    this.newTransactionCallback = () => { };
-    this.newBlockCallback = () => { };
+    this.newTransactionCallback = () => {};
+    this.newBlockCallback = () => {};
     this.getBlockChainCallback = () => [];
     this.getTransactionsPoolCallback = () => [];
   }
@@ -163,10 +163,7 @@ class P2PServer {
       () => {
         this.log('===', 'Current neighbors:');
         this.neighbors.forEach((n) => {
-          this.log(
-            '===',
-            `- ${n.name} ${n.listeningAddress} (${n.address})`,
-          );
+          this.log('===', `- ${n.name} ${n.listeningAddress} (${n.address})`);
         });
       },
       Math.floor(Math.random() * 2000) + 4000,
@@ -230,7 +227,12 @@ class P2PServer {
     });
   }
 
-  private send(socket: Socket, type: PacketType, flag: PacketFlag, data?: string) {
+  public send(
+    socket: Socket,
+    type: PacketType,
+    flag: PacketFlag,
+    data?: string,
+  ) {
     if (socket.destroyed) return;
     let b = Buffer.alloc(6);
     b.writeUInt8(type, 0);
@@ -343,18 +345,28 @@ class P2PServer {
         this.newBlockCallback(packet.json);
         break;
       case PacketType.GET_TRANSACTIONS_POOL:
-        if(packet.flag === PacketFlag.REQUEST){
+        if (packet.flag === PacketFlag.REQUEST) {
           const transactions = this.getTransactionsPoolCallback();
           for (const transaction of transactions) {
-            this.send(neighbor.socket, PacketType.NEW_TRANSACTION, PacketFlag.RESPONSE, transaction);
+            this.send(
+              neighbor.socket,
+              PacketType.NEW_TRANSACTION,
+              PacketFlag.RESPONSE,
+              transaction,
+            );
           }
         }
         break;
       case PacketType.GET_BLOCKCHAIN:
-        if(packet.flag === PacketFlag.REQUEST){
+        if (packet.flag === PacketFlag.REQUEST) {
           const blocks = this.getBlockChainCallback();
           for (const block of blocks) {
-            this.send(neighbor.socket, PacketType.NEW_BLOCK, PacketFlag.RESPONSE, block);
+            this.send(
+              neighbor.socket,
+              PacketType.NEW_BLOCK,
+              PacketFlag.RESPONSE,
+              block,
+            );
           }
         }
         break;
@@ -383,11 +395,19 @@ class P2PServer {
   }
 
   public broadcastNewTransaction(serializedTransaction: string) {
-    this.sendToAllNeighbors(PacketType.NEW_TRANSACTION, PacketFlag.NONE, serializedTransaction);
+    this.sendToAllNeighbors(
+      PacketType.NEW_TRANSACTION,
+      PacketFlag.NONE,
+      serializedTransaction,
+    );
   }
 
   public broadcastNewBlock(serializedBlock: string) {
-    this.sendToAllNeighbors(PacketType.NEW_BLOCK, PacketFlag.NONE, serializedBlock);
+    this.sendToAllNeighbors(
+      PacketType.NEW_BLOCK,
+      PacketFlag.NONE,
+      serializedBlock,
+    );
   }
 }
 
